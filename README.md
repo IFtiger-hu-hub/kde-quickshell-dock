@@ -20,6 +20,10 @@ whatever order you like.
 - **Auto-hide** that never disappears completely — the dock slides down to a
   thin sliver at the screen edge and comes back when the pointer touches it.
 - Click to launch, hover for the application name.
+- **Knows what's running**: running apps carry a corner badge with a dot per
+  open window, clicking one raises its windows instead of starting a second
+  copy, and a **+** button above the icon opens another window when you do want
+  one (see [Running applications](#running-applications)).
 - Picks up favourite changes live — favourite something in Kickoff and it
   appears without a restart.
 - Resolves icons through a fallback chain, so absolute-path and
@@ -31,11 +35,24 @@ whatever order you like.
 
 - Quickshell (developed against 0.3.1)
 - A compositor supporting `wlr-layer-shell` (KWin on Plasma 6 does)
+- Plasma's `org.kde.taskmanager` QML module, from `plasma-workspace`, for the
+  running-application features
+- One extra install step to let KWin tell the dock what's running — see
+  [Running applications](#running-applications). Without it everything else
+  still works; the dock just behaves as a plain launcher.
 
 ## Running
 
 ```sh
 qs -p ./shell.qml
+```
+
+For the running-application features, also install the permission file once:
+
+```sh
+install -Dm644 org.quickshell.dock.desktop \
+  ~/.local/share/applications/org.quickshell.dock.desktop
+kbuildsycoca6
 ```
 
 To autostart it with your session:
@@ -47,9 +64,12 @@ cat > ~/.config/autostart/quickshell-dock.desktop <<EOF
 Type=Application
 Name=Quickshell Dock
 Exec=qs -p $PWD/shell.qml
-X-KDE-Wayland-Interfaces=zwlr_layer_shell_v1
 EOF
 ```
+
+(`X-KDE-Wayland-Interfaces` does nothing in an autostart file — KWin only reads
+it from the installed-applications index. See
+[The KWin permission](#the-kwin-permission).)
 
 ## Configuration
 
@@ -61,6 +81,7 @@ magnification, and:
 | `source` | `"kickoff"` for launcher favourites, `"taskmanager"` for the task manager's pinned launchers |
 | `autoHide` | Slide away when unused, leaving `peekHeight` px showing |
 | `peekHeight` | How much of the dock stays visible while hidden |
+| `peekOpacity` | How solid that sliver is; the dock fades to this as it slides away |
 | `triggerHeight` | Invisible pointer-catching strip along the screen edge |
 | `hideDelay` | How long the pointer must be away before it hides |
 | `edgeCorners` | Inverted corners flaring the dock into the screen edge |
@@ -70,6 +91,15 @@ magnification, and:
 | `backgroundColor` / `backgroundOpacity` | Dock background tint and translucency, kept separate from hex alpha |
 | `reserveSpace` | `true` makes windows avoid the dock; `false` floats it on top |
 | `hoverMagnify` | macOS-style icon zoom on hover |
+| `raiseRunning` | Clicking a running app raises its windows instead of launching another copy |
+| `runningIndicator` | Draw the corner badge on running apps |
+| `indicatorMaxDots` | Cap on the dots, so a browser with ten windows can't run the badge across the icon |
+| `indicatorInsetX` / `indicatorInsetY` | Badge distance from the icon's corner, per axis; negative overhangs |
+| `indicatorPadding` | Padding between the dots and the edge of their backing |
+| `indicatorColor` / `indicatorActiveColor` | Dot colour, and the accent used for the focused app |
+| `indicatorBackground` | The badge's backing; `"transparent"` gives bare dots |
+| `newInstanceButton` | Show the **+** button above a running app's icon |
+| `newInstanceSize` / `newInstanceGap` | Button diameter, and its distance from the dock plate |
 
 Quickshell hot-reloads on save, so edits apply immediately.
 
@@ -82,7 +112,11 @@ Hidden, only `peekHeight` px of its top remain visible.
 The window itself stays full height the whole time; only the plate slides. What
 moves with it is the input region (`mask`), so while the dock is hidden
 everything except that thin sliver clicks straight through to the window
-underneath. `triggerHeight` widens that strip a little beyond the visible
+underneath. The dock also fades to `peekOpacity` on the way out, driven off how
+far the plate has actually travelled rather than off `revealed`, so the fade
+rides the slide instead of needing an animation of its own to keep in step with.
+The mask doesn't fade with it, so even `peekOpacity: 0` leaves the dock exactly
+as easy to summon — just invisible until you do. `triggerHeight` widens that strip a little beyond the visible
 sliver, so the dock isn't fiddly to summon. It also won't slide away mid-drag.
 
 Two details make revealing under a **stationary** pointer behave, both of which
@@ -99,6 +133,88 @@ took real debugging:
 
 `revealGrace` is belt-and-braces on top: a brief window after revealing in which
 a momentary "nothing hovered" is ignored rather than starting the hide timer.
+
+## Running applications
+
+Three things hang off knowing what's open: the badge in an icon's top-left
+corner (one dot per window, capped at `indicatorMaxDots`, accent-coloured while
+that app has focus), click-to-raise, and the **+** button.
+
+The badge sits **on** the icon rather than in a strip of its own, so switching
+it on doesn't change the dock's size. That does mean it lands on artwork of any
+colour, which is why it carries its own dark backing — pale dots vanish outright
+on a white icon. `indicatorBackground: "transparent"` gives bare dots back if
+your icons are uniform enough to take them.
+
+**Clicking a running app raises it** rather than starting a second copy. When it
+owns several windows each click steps to the next one, so repeated clicks cycle
+the group instead of arguing over which single window counts as "the" window. A
+minimized window is unminimized first — `requestActivate` on its own leaves it
+minimized.
+
+That leaves no way to *deliberately* open another window, which is what the **+**
+button above the icon is for. It appears on hover over a running app and calls
+`requestNewInstance`, which runs the launcher afresh.
+
+### Why not `ToplevelManager`
+
+Quickshell ships `ToplevelManager`, which speaks
+`wlr-foreign-toplevel-management`. On a Plasma session it is permanently empty,
+and not because of a permission: **KWin implements no foreign-toplevel protocol
+at all** — neither the wlr one nor `ext-foreign-toplevel-list-v1`. Dumping the
+Wayland registry on KWin 6.6 turns up neither.
+
+What KWin does have is its own `org_kde_plasma_window_management`, which is what
+Plasma's task manager runs on. So the dock reads Plasma's **libtaskmanager**
+(`org.kde.taskmanager`) instead. That also hands us the genuinely hard part for
+free: mapping a window back to the `.desktop` file it was launched from, which
+is exactly the key the dock is indexed by. Doing that from raw toplevel app-ids
+means reimplementing a pile of per-application special cases.
+
+### The KWin permission
+
+`org_kde_plasma_window_management` is a **restricted interface**. KWin resolves a
+connecting client to its executable, finds that executable's `.desktop` file,
+and only advertises the interface if the file lists it under
+`X-KDE-Wayland-Interfaces`. Otherwise you get this in the log and an empty model:
+
+```
+org.kde.plasma.libtaskmanager: The PlasmaWindowManagement protocol hasn't
+activated in time. The client possibly got denied by kwin? Check kwin output.
+```
+
+Quickshell's own `org.quickshell.desktop` carries no `Exec=` line, so KWin can't
+match a process to it. Hence [org.quickshell.dock.desktop](org.quickshell.dock.desktop),
+which names the binary and asks for the interface. It has to point at the
+**quickshell executable**, not at `shell.qml` — KWin is identifying a process,
+not a config. An autostart entry in `~/.config/autostart` won't do, either; KWin
+looks the client up through the installed-applications index, which autostart
+files aren't part of.
+
+`qs` being a symlink to `quickshell` doesn't matter: the lookup resolves to the
+real binary, so one file covers both.
+
+When the grant is missing, `Tasks` simply reports that nothing is running. Every
+app then looks not-running, so clicks launch, no dots are drawn and the **+**
+button never appears — the dock as it was before.
+
+### Reaching the button
+
+The dock's input region (`mask`) normally covers only the visible part of the
+plate, so everything above it clicks straight through. The **+** button lives up
+there in the headroom, which means it has to add itself back into the mask while
+it's shown.
+
+Getting the pointer to it needs two more details:
+
+- The button's item is **taller than the button it draws**, reaching down to the
+  icon's top edge, so the trip up from the icon crosses no dead space.
+- It still passes over the plate's padding, where neither the icon nor the button
+  is hovered, so a short grace period keeps it up rather than letting it blink
+  out from under the pointer on the way.
+
+Hovering the button also counts as hovering the dock, or auto-hide would slide
+the whole thing away the moment you left the icon.
 
 ## The dock outline
 
@@ -231,7 +347,9 @@ and its remembered position is discarded.
 | --- | --- |
 | [shell.qml](shell.qml) | Entry point; one dock per screen |
 | [Dock.qml](Dock.qml) | The panel: layer-shell window, list, drag-reorder wiring, auto-hide, tooltip |
-| [DockIcon.qml](DockIcon.qml) | One cell's visuals — highlight, icon, hover zoom |
+| [DockIcon.qml](DockIcon.qml) | One cell's visuals — highlight, icon, hover zoom, running dots |
+| [Tasks.qml](Tasks.qml) | What's running, via Plasma's libtaskmanager; raise and new-instance |
+| [org.quickshell.dock.desktop](org.quickshell.dock.desktop) | Asks KWin for the restricted window-management interface |
 | [IconResolver.qml](IconResolver.qml) | Builds the icon fallback chain |
 | [PlasmaFavorites.qml](PlasmaFavorites.qml) | Picks the favourites source and resolves entries |
 | [KAstatsFavorites.qml](KAstatsFavorites.qml) | Reads favourites from the KActivities database |
@@ -246,3 +364,11 @@ and its remembered position is discarded.
   read.
 - Applet ids in `appletsrc` are per-machine, so the Kickoff applet is found by
   scanning for the right `plugin=` with a non-empty list rather than a fixed id.
+- `TasksModel` emits `dataChanged` for things the dock doesn't care about —
+  window titles, most of all — so rebuilds are coalesced to once per event loop
+  turn and skipped entirely when the result is identical. Otherwise typing in an
+  editor re-evaluates every icon's bindings.
+- Window-to-launcher matching is normalised on both sides (strip
+  `applications:`, strip any path, drop `.desktop`, lowercase). The lowercasing
+  earns its keep on Chrome web apps, which Plasma lists as
+  `chrome-…-Default.desktop` but reports running as `chrome-…-default`.

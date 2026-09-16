@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Quickshell Dock
+Comment=Grants Quickshell the Plasma window-management protocol the dock needs
+Icon=org.quickshell
+NoDisplay=true
+
+# KWin identifies a Wayland client by its executable and then looks it up here,
+# so this has to name the quickshell binary itself, not the dock's shell.qml.
+# Adjust the path if yours lives somewhere other than /usr/bin.
+Exec=/usr/bin/quickshell
+
+# Restricted interface: without this line KWin refuses the dock access to the
+# running-window list, and it degrades to a plain launcher.
+X-KDE-Wayland-Interfaces=org_kde_plasma_window_management

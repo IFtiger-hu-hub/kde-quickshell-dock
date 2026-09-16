@@ -2,13 +2,20 @@ import Quickshell
 import QtQuick
 import QtQuick.Effects
 
-// The visual for one dock cell: highlight plate + application icon.
+// The visual for one dock cell: highlight plate, application icon, and the
+// running badge in its top-left corner.
 Item {
     id: root
 
     required property var entry
     property bool hovered: false
     property bool dragging: false
+
+    // How many windows this app has open, and whether one of them has focus.
+    property int windows: 0
+    property bool active: false
+
+    readonly property bool running: windows > 0
 
     // Sources to try in order; advance past any that fail to load.
     readonly property var sources: IconResolver.candidates(entry)
@@ -64,5 +71,52 @@ Item {
         shadowBlur: 0.7
         shadowColor: "#aa000000"
         shadowVerticalOffset: 3
+    }
+
+    // One dot per open window, capped so a browser with a dozen windows can't
+    // run the badge across the whole icon. The accent colour marks the app that
+    // currently has focus.
+    //
+    // Drawn over the icon's top-left corner rather than in a strip of its own,
+    // so running apps don't make the dock any taller. Declared last so it stays
+    // above the artwork.
+    Rectangle {
+        id: indicator
+
+        x: Config.cellPadding + Config.indicatorInsetX
+        y: Config.cellPadding + Config.indicatorInsetY
+        width: dots.width + Config.indicatorPadding * 2
+        height: dots.height + Config.indicatorPadding * 2
+        radius: height / 2
+
+        color: Config.indicatorBackground
+
+        visible: opacity > 0
+        opacity: Config.runningIndicator && root.running && !root.dragging ? 1 : 0
+        Behavior on opacity {
+            NumberAnimation { duration: 140 }
+        }
+
+        Row {
+            id: dots
+
+            anchors.centerIn: parent
+            spacing: Config.indicatorSpacing
+
+            Repeater {
+                model: Math.min(root.windows, Config.indicatorMaxDots)
+
+                Rectangle {
+                    width: Config.indicatorDotSize
+                    height: Config.indicatorDotSize
+                    radius: height / 2
+                    color: root.active ? Config.indicatorActiveColor : Config.indicatorColor
+
+                    Behavior on color {
+                        ColorAnimation { duration: 160 }
+                    }
+                }
+            }
+        }
     }
 }

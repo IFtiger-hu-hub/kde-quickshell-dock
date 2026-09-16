@@ -6,8 +6,10 @@ import QtQuick.Shapes
 PanelWindow {
     id: dock
 
-    // Room above the dock plate for the magnified icon and the tooltip.
-    readonly property int headroom: 34
+    // Room above the dock plate for the magnified icon, the new-instance
+    // button, and the tooltip stacked above both.
+    readonly property int headroom: 34 + (Config.newInstanceButton
+        ? Config.newInstanceSize + Config.newInstanceGap : 0)
     readonly property int plateHeight: Config.cellSize + Config.dockPadding * 2
     readonly property int plateWidth: Math.max(
         Config.cellSize + Config.dockPadding * 2,
@@ -98,15 +100,29 @@ PanelWindow {
     // How far down the plate is pushed when hidden, leaving peekHeight showing.
     readonly property int hiddenOffset: plateHeight - Config.peekHeight
 
+    // 0 fully out, 1 fully tucked away. Taken from where the plate actually is
+    // rather than from `revealed`, so anything driven off it rides the existing
+    // slide animation instead of needing one of its own -- a second animation
+    // would have to be kept in step with the first by hand.
+    readonly property real slideProgress: hiddenOffset > 0
+        ? Math.max(0, Math.min(1, plate.y / hiddenOffset))
+        : 0
+
+    // Full strength while out, easing to peekOpacity as it goes.
+    readonly property real plateOpacity: 1 - slideProgress * (1 - Config.peekOpacity)
+
     property bool revealed: !Config.autoHide
     // True while an icon is held, so the dock can't slide away mid-drag.
     property bool interacting: false
-    // Pointer over an icon specifically; bodyHover covers the dock as a whole.
-    property int hoveredCells: 0
+    // The cell under the pointer, or null. bodyHover covers the dock as a
+    // whole; this says *which* icon, which is what the tooltip and the
+    // new-instance button hang off.
+    property var hoveredCell: null
 
     readonly property bool wantRevealed: !Config.autoHide
         || bodyHover.hovered
-        || hoveredCells > 0
+        || hoveredCell !== null
+        || launchArea.containsMouse
         || interacting
 
     onWantRevealedChanged: {
@@ -120,6 +136,39 @@ PanelWindow {
     }
 
     onRevealedChanged: if (revealed) graceTimer.restart();
+
+    // ---- new-instance button ---------------------------------------------
+
+    // The cell the button belongs to. It outlives the hover so the button
+    // stays put while the pointer travels up to it.
+    property var launchCell: null
+    onHoveredCellChanged: if (hoveredCell) launchCell = hoveredCell;
+
+    readonly property bool launchWanted: Config.newInstanceButton
+        && revealed
+        && launchCell !== null
+        && launchCell.running
+        && (hoveredCell === launchCell || launchArea.containsMouse)
+
+    // Crossing from the icon to the button passes over the plate's padding,
+    // where neither is hovered. Without a grace period the button would blink
+    // out from under the pointer on the way to it.
+    property bool launchShown: false
+
+    onLaunchWantedChanged: {
+        if (launchWanted) {
+            launchHideTimer.stop();
+            launchShown = true;
+        } else {
+            launchHideTimer.restart();
+        }
+    }
+
+    Timer {
+        id: launchHideTimer
+        interval: 150
+        onTriggered: dock.launchShown = false
+    }
 
     Timer {
         id: graceTimer
@@ -161,6 +210,20 @@ PanelWindow {
         y: dock.maskTop
         width: body.width
         height: dock.height - dock.maskTop
+
+        // The button sits in the headroom, which is click-through by default,
+        // so it has to add itself back in while it's up.
+        //
+        // The geometry is given twice on purpose: `item` is what the region
+        // actually measures, while the explicit bindings are what notice the
+        // button sliding to a different icon and ask for a rebuild.
+        Region {
+            item: dock.launchShown ? launcher : null
+            x: launcher.x
+            y: launcher.y
+            width: dock.launchShown ? launcher.width : 0
+            height: dock.launchShown ? launcher.height : 0
+        }
     }
 
     WlrLayershell.namespace: "quickshell-dock"
@@ -232,6 +295,11 @@ PanelWindow {
         y: dock.height - dock.gap - dock.plateHeight
         width: dock.plateWidth
         height: dock.plateHeight + dock.gap
+
+        // Fades the plate and its icons together as one group, so they don't
+        // blend through each other on the way out. The input mask is untouched,
+        // so however faint the sliver gets it stays just as easy to summon.
+        opacity: dock.plateOpacity
 
         HoverHandler { id: bodyHover }
 
@@ -305,6 +373,14 @@ PanelWindow {
 
                 readonly property var entry: dock.entryMap[appId] ?? null
 
+                // What the task list calls this app. The resolved entry's id is
+                // the canonical spelling; the favourite's own token is only a
+                // fallback for entries that never resolved.
+                readonly property string taskKey: Tasks.key(entry ? entry.id : appId)
+                readonly property int windows: Tasks.windowCount(taskKey)
+                readonly property bool active: Tasks.isActive(taskKey)
+                readonly property bool running: windows > 0
+
                 width: Config.cellSize
                 height: Config.cellSize
 
@@ -338,6 +414,8 @@ PanelWindow {
                     entry: cell.entry
                     hovered: dragArea.containsMouse
                     dragging: dragArea.drag.active
+                    windows: cell.windows
+                    active: cell.active
 
                     Drag.active: dragArea.drag.active
                     Drag.source: cell
@@ -382,20 +460,16 @@ PanelWindow {
                     // Don't start dragging until the pointer has clearly moved.
                     drag.threshold: 8
 
-                    onEntered: {
-                        dock.hoveredCells++;
-                        tooltip.text = cell.entry ? cell.entry.name : cell.appId;
-                        tooltip.anchorItem = cell;
-                    }
-                    onExited: {
-                        dock.hoveredCells = Math.max(0, dock.hoveredCells - 1);
-                        if (tooltip.anchorItem === cell) tooltip.anchorItem = null;
-                    }
+                    // Entering the next cell can arrive before leaving this
+                    // one, so only surrender the slot if it's still ours.
+                    onEntered: dock.hoveredCell = cell
+                    onExited: if (dock.hoveredCell === cell) dock.hoveredCell = null;
 
-                    // A delegate destroyed while hovered would otherwise leak a
-                    // count and pin the dock open.
+                    // A delegate destroyed while hovered would otherwise leave
+                    // a dangling reference and pin the dock open.
                     Component.onDestruction: {
-                        if (containsMouse) dock.hoveredCells = Math.max(0, dock.hoveredCells - 1);
+                        if (dock.hoveredCell === cell) dock.hoveredCell = null;
+                        if (dock.launchCell === cell) dock.launchCell = null;
                     }
 
                     onPressed: {
@@ -417,8 +491,12 @@ PanelWindow {
                         Qt.callLater(cell.returnHome);
                     }
 
+                    // A running app raises instead of launching a second copy;
+                    // the button above the icon is what opens another window.
                     onClicked: {
-                        if (!didDrag && cell.entry) cell.entry.execute();
+                        if (didDrag) return;
+                        if (Config.raiseRunning && cell.running && Tasks.activate(cell.taskKey)) return;
+                        if (cell.entry) cell.entry.execute();
                     }
                 }
             }
@@ -433,13 +511,102 @@ PanelWindow {
         z: 10
     }
 
+    // ---- new-instance button ----------------------------------------------
+
+    // Clicking a running icon raises what's already open, so opening another
+    // window needs a target of its own. It floats over the hovered icon, in the
+    // same headroom the magnified icon and the tooltip use.
+    //
+    // The item is taller than the button it draws: the extra height reaches
+    // down to the plate so the pointer never crosses dead space on its way up
+    // from the icon.
+    Item {
+        id: launcher
+
+        z: 15
+
+        readonly property var cell: dock.launchCell
+
+        width: Config.cellSize
+        height: Config.newInstanceSize + Config.newInstanceGap + Config.dockPadding
+
+        visible: opacity > 0
+        opacity: dock.launchShown ? 1 : 0
+        Behavior on opacity {
+            NumberAnimation { duration: 120 }
+        }
+
+        // Bottom edge lands on the icon's own top edge, not the plate's.
+        y: dock.plateTop + Config.dockPadding - height
+        x: {
+            if (!cell) return 0;
+            const centre = cell.mapToItem(null, cell.width / 2, 0).x;
+            return Math.max(0, Math.min(dock.width - width, centre - width / 2));
+        }
+
+        MouseArea {
+            id: launchArea
+
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            // While fading out it's still drawn but no longer a target, and a
+            // disabled MouseArea lets clicks through to whatever is behind.
+            enabled: dock.launchShown
+
+            onClicked: if (launcher.cell) Tasks.launchNew(launcher.cell.taskKey);
+        }
+
+        Rectangle {
+            id: launchButton
+
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Config.newInstanceSize
+            height: Config.newInstanceSize
+            radius: height / 2
+
+            color: launchArea.containsMouse ? Config.newInstanceHoverBackground
+                                            : Config.newInstanceBackground
+            border.width: Config.borderWidth
+            border.color: Config.border
+
+            Behavior on color {
+                ColorAnimation { duration: 120 }
+            }
+
+            // A "+" drawn as two bars, so it scales with the button instead of
+            // depending on whatever glyph the font happens to ship.
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.round(parent.width * 0.42)
+                height: Config.newInstanceStroke
+                radius: height / 2
+                color: Config.newInstanceForeground
+            }
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: Config.newInstanceStroke
+                height: Math.round(parent.width * 0.42)
+                radius: width / 2
+                color: Config.newInstanceForeground
+            }
+        }
+    }
+
     // ---- tooltip ----------------------------------------------------------
 
     Item {
         id: tooltip
 
-        property string text: ""
-        property var anchorItem: null
+        // Hovering the button describes the button; otherwise it names the app
+        // under the pointer. Both are read straight off the hover state, so
+        // there's no ordering to get wrong when the pointer moves between them.
+        readonly property var anchorItem: launchArea.containsMouse
+            ? dock.launchCell : dock.hoveredCell
+        readonly property string text: !anchorItem ? ""
+            : launchArea.containsMouse ? Config.newInstanceLabel
+            : (anchorItem.entry ? anchorItem.entry.name : anchorItem.appId)
 
         z: 20
         readonly property bool shown: anchorItem !== null && text !== "" && dock.revealed
@@ -453,7 +620,9 @@ PanelWindow {
         width: label.implicitWidth + 18
         height: label.implicitHeight + 10
 
-        y: dock.plateTop - height - 6
+        // Sits above the new-instance button when that's up, so the two don't
+        // stack on top of each other.
+        y: (dock.launchShown ? launcher.y : dock.plateTop) - height - 6
         x: {
             if (!anchorItem) return 0;
             // null maps to scene coordinates, which for a window are its own.
