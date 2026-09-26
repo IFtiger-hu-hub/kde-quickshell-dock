@@ -27,6 +27,9 @@ Singleton {
     // Role ids, pulled off the model type once instead of spelling out the
     // fully qualified enum at every call site.
     readonly property int roleLauncherUrl: TaskManager.AbstractTasksModel.LauncherUrlWithoutIcon
+    readonly property int roleAppId: TaskManager.AbstractTasksModel.AppId
+    readonly property int roleAppName: TaskManager.AbstractTasksModel.AppName
+    readonly property int roleIcon: Qt.DecorationRole
     readonly property int roleIsWindow: TaskManager.AbstractTasksModel.IsWindow
     readonly property int roleIsGroupParent: TaskManager.AbstractTasksModel.IsGroupParent
     readonly property int roleChildCount: TaskManager.AbstractTasksModel.ChildCount
@@ -70,17 +73,67 @@ Singleton {
         return rec ? rec.active : false;
     }
 
+    // Resolves a running application key to a DesktopEntry, with fallback to TaskManager data
+    function resolveEntry(key) {
+        if (!key) return null;
+        const cleanKey = root.key(key);
+        const rec = root.apps[cleanKey];
+
+        // 1. Try DesktopEntries by exact key or variations
+        let entry = DesktopEntries.byId(cleanKey)
+                 || DesktopEntries.heuristicLookup(cleanKey);
+
+        if (!entry && rec && rec.appId) {
+            const cleanAppId = root.key(rec.appId);
+            entry = DesktopEntries.byId(cleanAppId) || DesktopEntries.heuristicLookup(cleanAppId);
+        }
+
+        if (!entry && rec && rec.name) {
+            entry = DesktopEntries.heuristicLookup(rec.name);
+        }
+
+        if (entry) return entry;
+
+        // 2. Synthetic entry fallback if no desktop file exists
+        if (rec) {
+            return {
+                id: cleanKey,
+                name: rec.name || cleanKey,
+                icon: rec.icon || cleanKey,
+                noDisplay: false,
+                execute: function() { root.activate(cleanKey); }
+            };
+        }
+        return null;
+    }
+
     // ---- actions ----------------------------------------------------------
 
     // Raises the app's windows. When it owns several, each call steps to the
     // next one, so repeated clicks cycle the group instead of arguing over
     // which single window counts as "the" window.
-    function activate(key) {
+    // When only one window is open and minimizeActive is enabled, clicking
+    // the already-active window minimizes it.
+    function activate(key, allowMinimize = true) {
         const rec = root.info(key);
         if (!rec) return false;
 
         const row = tasks.index(rec.row, 0);
         const children = tasks.data(row, root.roleIsGroupParent) ? tasks.rowCount(row) : 0;
+
+        // Toggle minimize for single window if currently active
+        if (allowMinimize && Config.minimizeActive && rec.windows === 1) {
+            const target = root.windowIndex(key);
+            if (target && target.valid) {
+                const isActive = tasks.data(target, root.roleIsActive) === true || tasks.data(row, root.roleIsActive) === true;
+                if (isActive) {
+                    tasks.requestToggleMinimized(target);
+                    return true;
+                }
+                return root.raise(target);
+            }
+        }
+
         if (children === 0) return root.raise(row);
 
         let next = 0;
@@ -144,12 +197,10 @@ Singleton {
         onRowsMoved: rebuildTimer.restart()
     }
 
-    // dataChanged fires for things the dock doesn't care about (window titles,
-    // most of all), so coalesce a burst into one rebuild at the end of the
-    // event loop turn.
+    // Coalesce high-frequency bursts (e.g. streaming window titles) into 50ms batches
     Timer {
         id: rebuildTimer
-        interval: 0
+        interval: 50
         onTriggered: root.rebuild()
     }
 
@@ -165,7 +216,14 @@ Singleton {
             const row = tasks.index(i, 0);
             if (!tasks.data(row, root.roleIsWindow)) continue;
 
-            const key = root.key(tasks.data(row, root.roleLauncherUrl));
+            const launcherUrl = tasks.data(row, root.roleLauncherUrl);
+            const appIdVal = tasks.data(row, root.roleAppId);
+            const appName = tasks.data(row, root.roleAppName);
+            const iconVal = tasks.data(row, root.roleIcon);
+
+            let key = root.key(launcherUrl);
+            if (key === "") key = root.key(appIdVal);
+            if (key === "") key = root.key(appName);
             if (key === "") continue;
 
             const grouped = tasks.data(row, root.roleIsGroupParent);
@@ -175,7 +233,15 @@ Singleton {
             // aren't groupable, so accumulate rather than overwrite.
             let rec = apps[key];
             if (!rec) {
-                rec = { row: i, windows: 0, active: false };
+                rec = {
+                    row: i,
+                    windows: 0,
+                    active: false,
+                    launcherUrl: launcherUrl,
+                    appId: appIdVal || key,
+                    name: appName || key,
+                    icon: iconVal || key
+                };
                 apps[key] = rec;
             }
             rec.windows += windows;

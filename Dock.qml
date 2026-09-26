@@ -11,11 +11,16 @@ PanelWindow {
     readonly property int headroom: 34 + (Config.newInstanceButton
         ? Config.newInstanceSize + Config.newInstanceGap : 0)
     readonly property int plateHeight: Config.cellSize + Config.dockPadding * 2
+    readonly property int appsWidth: orderModel.count > 0
+        ? (orderModel.count * Config.cellSize + Math.max(0, orderModel.count - 1) * Config.spacing)
+        : 0
+    readonly property int separatorWidth: 1
+    readonly property int separatorMargin: Math.max(4, Config.spacing * 2)
+    readonly property int separatorTotalWidth: separatorMargin * 2 + separatorWidth
+    readonly property int rightSectionWidth: separatorTotalWidth + Config.cellSize
     readonly property int plateWidth: Math.max(
         Config.cellSize + Config.dockPadding * 2,
-        orderModel.count * Config.cellSize
-            + Math.max(0, orderModel.count - 1) * Config.spacing
-            + Config.dockPadding * 2)
+        appsWidth + (appsWidth > 0 ? rightSectionWidth : Config.cellSize) + Config.dockPadding * 2)
 
     // id -> DesktopEntry, kept alongside the ListModel (which holds ids only).
     property var entryMap: ({})
@@ -118,12 +123,16 @@ PanelWindow {
     // whole; this says *which* icon, which is what the tooltip and the
     // new-instance button hang off.
     property var hoveredCell: null
+    property bool settingsOpen: false
 
     readonly property bool wantRevealed: !Config.autoHide
         || bodyHover.hovered
         || hoveredCell !== null
         || launchArea.containsMouse
+        || settingsMouseArea.containsMouse
         || interacting
+        || dock.settingsOpen
+        || contextMenu.visible
 
     onWantRevealedChanged: {
         if (wantRevealed) {
@@ -230,19 +239,48 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
+    // Preload recent files on dock startup so it is cached before right-clicking
+    property var _preloadRecent: RecentFiles.recentMap
+
     // ---- model sync -------------------------------------------------------
 
     // Rebuilds the ListModel from Plasma's favourites merged with the saved
-    // order. No-ops when the result already matches, so our own drag-reorders
-    // (which write to DockOrder) don't bounce back and clobber the drag.
+    // order, plus any currently running applications that are not pinned.
     function syncModel() {
         const favourites = PlasmaFavorites.entries;
 
         const map = ({});
         for (const f of favourites) map[f.id] = f.entry;
-        dock.entryMap = map;
 
         const desired = DockOrder.merge(favourites.map(f => f.id));
+
+        // When showRunningApps is enabled, dynamically add any running apps not in favourites
+        if (Config.showRunningApps) {
+            const runningKeys = Object.keys(Tasks.apps);
+            for (const key of runningKeys) {
+                if (Tasks.windowCount(key) <= 0) continue;
+
+                let alreadyPresent = false;
+                for (let i = 0; i < desired.length; i++) {
+                    const existingId = desired[i];
+                    if (existingId === key || Tasks.key(existingId) === key) {
+                        alreadyPresent = true;
+                        if (!map[key] && map[existingId]) map[key] = map[existingId];
+                        break;
+                    }
+                }
+
+                if (!alreadyPresent) {
+                    const entry = Tasks.resolveEntry(key);
+                    if (entry) {
+                        map[key] = entry;
+                        desired.push(key);
+                    }
+                }
+            }
+        }
+
+        dock.entryMap = map;
 
         let same = desired.length === orderModel.count;
         if (same) {
@@ -257,8 +295,14 @@ PanelWindow {
     }
 
     function persistOrder() {
+        const favIds = ({});
+        for (const f of PlasmaFavorites.entries) favIds[f.id] = true;
+
         const ids = [];
-        for (let i = 0; i < orderModel.count; i++) ids.push(orderModel.get(i).appId);
+        for (let i = 0; i < orderModel.count; i++) {
+            const id = orderModel.get(i).appId;
+            if (favIds[id]) ids.push(id);
+        }
         DockOrder.save(ids);
     }
 
@@ -270,6 +314,16 @@ PanelWindow {
     Connections {
         target: DockOrder
         function onReadyChanged() { dock.syncModel(); }
+    }
+
+    Connections {
+        target: Tasks
+        function onAppsChanged() { dock.syncModel(); }
+    }
+
+    Connections {
+        target: Config
+        function onShowRunningAppsChanged() { dock.syncModel(); }
     }
 
     Component.onCompleted: syncModel()
@@ -344,18 +398,23 @@ PanelWindow {
             }
         }
 
-        ListView {
-            id: list
-
-                anchors.centerIn: plate
-            width: plate.width - Config.dockPadding * 2
+        Row {
+            id: contentRow
+            anchors.centerIn: plate
             height: Config.cellSize
+            spacing: 0
 
-            orientation: ListView.Horizontal
-            spacing: Config.spacing
-            interactive: false
-            clip: false
-            model: orderModel
+            ListView {
+                id: list
+
+                width: dock.appsWidth
+                height: Config.cellSize
+
+                orientation: ListView.Horizontal
+                spacing: Config.spacing
+                interactive: false
+                clip: false
+                model: orderModel
 
             // Animates the neighbours sliding aside as a dragged icon passes over.
             moveDisplaced: Transition {
@@ -371,7 +430,7 @@ PanelWindow {
                 required property int index
                 required property string appId
 
-                readonly property var entry: dock.entryMap[appId] ?? null
+                readonly property var entry: dock.entryMap[appId] ?? Tasks.resolveEntry(appId) ?? null
 
                 // What the task list calls this app. The resolved entry's id is
                 // the canonical spelling; the favourite's own token is only a
@@ -450,12 +509,12 @@ PanelWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    acceptedButtons: Qt.LeftButton
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
 
                     // Distinguishes a reorder from a plain click-to-launch.
                     property bool didDrag: false
 
-                    drag.target: content
+                    drag.target: (dragArea.pressedButtons & Qt.LeftButton) ? content : null
                     drag.axis: Drag.XAxis
                     // Don't start dragging until the pointer has clearly moved.
                     drag.threshold: 8
@@ -470,15 +529,18 @@ PanelWindow {
                     Component.onDestruction: {
                         if (dock.hoveredCell === cell) dock.hoveredCell = null;
                         if (dock.launchCell === cell) dock.launchCell = null;
+                        if (tooltip.activeAnchor === cell) tooltip.activeAnchor = null;
                     }
 
-                    onPressed: {
+                    onPressed: mouse => {
                         didDrag = false;
-                        dock.interacting = true;
+                        if (mouse.button === Qt.LeftButton) {
+                            dock.interacting = true;
+                        }
                     }
                     onPositionChanged: if (drag.active) didDrag = true;
 
-                    onReleased: {
+                    onReleased: mouse => {
                         dock.interacting = false;
                         if (didDrag) dock.persistOrder();
                         // Runs after the state change has reparented content back,
@@ -493,10 +555,118 @@ PanelWindow {
 
                     // A running app raises instead of launching a second copy;
                     // the button above the icon is what opens another window.
-                    onClicked: {
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            if (dock.settingsOpen) dock.settingsOpen = false;
+                            contextMenu.open(cell);
+                            return;
+                        }
                         if (didDrag) return;
+                        if (contextMenu.visible) contextMenu.close();
                         if (Config.raiseRunning && cell.running && Tasks.activate(cell.taskKey)) return;
                         if (cell.entry) cell.entry.execute();
+                    }
+                }
+            }
+        }
+
+            // macOS-style vertical separator
+            Item {
+                id: separatorItem
+                visible: dock.appsWidth > 0
+                width: dock.separatorTotalWidth
+                height: Config.cellSize
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: dock.separatorWidth
+                    height: Math.round(Config.iconSize * 0.72)
+                    radius: width / 2
+                    color: Config.border
+                }
+            }
+
+            // Settings button
+            Item {
+                id: settingsCell
+                width: Config.cellSize
+                height: Config.cellSize
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 10
+                    color: dock.settingsOpen ? Config.dragHighlight
+                         : settingsMouseArea.pressed ? Config.dragHighlight
+                         : settingsMouseArea.containsMouse ? Config.hoverHighlight
+                         : "transparent"
+
+                    Behavior on color {
+                        ColorAnimation { duration: 120 }
+                    }
+                }
+
+                Item {
+                    id: settingsIconContainer
+                    anchors.centerIn: parent
+                    width: Config.iconSize
+                    height: Config.iconSize
+
+                    scale: Config.hoverMagnify && settingsMouseArea.containsMouse ? Config.hoverScale : 1.0
+
+                    Behavior on scale {
+                        NumberAnimation { duration: 140; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+                    }
+
+                    // Dedicated squircle tile (macOS / Control Center aesthetic)
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Math.round(width * 0.22)
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: dock.settingsOpen ? "#454d60" : "#353b49" }
+                            GradientStop { position: 1.0; color: dock.settingsOpen ? "#262b35" : "#1e222a" }
+                        }
+                        border.width: 1
+                        border.color: dock.settingsOpen ? "#6088ff" : "#40ffffff"
+
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        // Dedicated vector Gear
+                        Shape {
+                            id: gearShape
+                            anchors.centerIn: parent
+                            width: Math.round(parent.width * 0.58)
+                            height: width
+                            scale: width / 24
+                            transformOrigin: Item.Center
+                            rotation: dock.settingsOpen ? 45 : (settingsMouseArea.containsMouse ? 15 : 0)
+
+                            Behavior on rotation {
+                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                            }
+
+                            preferredRendererType: Shape.CurveRenderer
+
+                            ShapePath {
+                                fillColor: dock.settingsOpen ? "#60a5fa" : "#f0f2f5"
+                                strokeWidth: 0
+                                PathSvg {
+                                    path: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: settingsMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: Qt.LeftButton
+
+                    onClicked: {
+                        if (contextMenu.visible) contextMenu.close();
+                        dock.settingsOpen = !dock.settingsOpen;
                     }
                 }
             }
@@ -602,14 +772,38 @@ PanelWindow {
         // Hovering the button describes the button; otherwise it names the app
         // under the pointer. Both are read straight off the hover state, so
         // there's no ordering to get wrong when the pointer moves between them.
-        readonly property var anchorItem: launchArea.containsMouse
-            ? dock.launchCell : dock.hoveredCell
-        readonly property string text: !anchorItem ? ""
+        readonly property var targetAnchor: launchArea.containsMouse
+            ? dock.launchCell
+            : (settingsMouseArea.containsMouse ? settingsCell : dock.hoveredCell)
+
+        // Retain the last active anchor and text so that when the pointer moves
+        // between adjacent icons (or leaves), the tooltip doesn't collapse to 0 width
+        // and jump to x: 0 while fading out, which causes a black square artifact.
+        property var activeAnchor: null
+        property string activeText: ""
+
+        readonly property string targetText: !targetAnchor ? ""
             : launchArea.containsMouse ? Config.newInstanceLabel
-            : (anchorItem.entry ? anchorItem.entry.name : anchorItem.appId)
+            : (settingsMouseArea.containsMouse ? "Dock 设置"
+            : (targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || "")))
+
+        onTargetAnchorChanged: {
+            if (targetAnchor) {
+                activeAnchor = targetAnchor;
+                if (targetText !== "") activeText = targetText;
+            }
+        }
+
+        onTargetTextChanged: {
+            if (targetAnchor && targetText !== "") {
+                activeText = targetText;
+            }
+        }
+
+        readonly property string text: targetText !== "" ? targetText : activeText
 
         z: 20
-        readonly property bool shown: anchorItem !== null && text !== "" && dock.revealed
+        readonly property bool shown: targetAnchor !== null && targetText !== "" && dock.revealed && !contextMenu.visible && !dock.settingsOpen
 
         visible: opacity > 0
         opacity: shown ? 1 : 0
@@ -624,10 +818,14 @@ PanelWindow {
         // stack on top of each other.
         y: (dock.launchShown ? launcher.y : dock.plateTop) - height - 6
         x: {
-            if (!anchorItem) return 0;
-            // null maps to scene coordinates, which for a window are its own.
-            const centre = anchorItem.mapToItem(null, anchorItem.width / 2, 0).x;
-            return Math.max(0, Math.min(dock.width - width, centre - width / 2));
+            const anchor = targetAnchor || activeAnchor;
+            if (!anchor || !anchor.parent) return 0;
+            try {
+                const centre = anchor.mapToItem(null, anchor.width / 2, 0).x;
+                return Math.max(0, Math.min(dock.width - width, centre - width / 2));
+            } catch (e) {
+                return 0;
+            }
         }
 
         Rectangle {
@@ -645,5 +843,21 @@ PanelWindow {
             color: Config.tooltipText
             font.pixelSize: 12
         }
+    }
+
+    Loader {
+        id: settingsLoader
+        active: dock.settingsOpen
+        sourceComponent: SettingsPanel {
+            anchor.item: settingsCell
+            visible: dock.settingsOpen
+            onClosed: dock.settingsOpen = false
+            onVisibleChanged: if (!visible) dock.settingsOpen = false
+        }
+    }
+
+    ContextMenu {
+        id: contextMenu
+        visible: false
     }
 }

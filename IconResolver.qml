@@ -13,9 +13,14 @@ import Quickshell
 // looks like the icon simply failed to load.
 Singleton {
     id: root
+    readonly property var _cache: ({})
+    readonly property var _themedCache: ({})
 
     function candidates(entry) {
         if (!entry) return [];
+
+        const cacheKey = String(entry.id || "") + ":" + String(entry.icon || "") + ":" + String(entry.name || "");
+        if (root._cache[cacheKey]) return root._cache[cacheKey];
 
         const out = [];
         const push = url => { if (url && out.indexOf(url) < 0) out.push(url); };
@@ -38,6 +43,7 @@ Singleton {
             push(icon.startsWith("/") ? "file://" + icon : "image://icon/" + icon);
         }
 
+        root._cache[cacheKey] = out;
         return out;
     }
 
@@ -45,7 +51,10 @@ Singleton {
     // it rather than rendering a blank.
     function themed(name) {
         if (!name || name.startsWith("/")) return "";
-        return Quickshell.iconPath(name, true);
+        if (root._themedCache[name] !== undefined) return root._themedCache[name];
+        const p = Quickshell.iconPath(name, true);
+        root._themedCache[name] = p;
+        return p;
     }
 
     function variants(icon, entry) {

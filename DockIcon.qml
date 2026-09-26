@@ -62,15 +62,17 @@ Item {
         }
     }
 
-    // Soft drop shadow while the icon is being carried.
-    MultiEffect {
+    // Soft drop shadow only instantiated while the icon is actively being carried
+    Loader {
+        active: root.dragging
         anchors.fill: icon
-        source: icon
-        visible: root.dragging
-        shadowEnabled: true
-        shadowBlur: 0.7
-        shadowColor: "#aa000000"
-        shadowVerticalOffset: 3
+        sourceComponent: MultiEffect {
+            source: icon
+            shadowEnabled: true
+            shadowBlur: 0.7
+            shadowColor: "#aa000000"
+            shadowVerticalOffset: 3
+        }
     }
 
     // One dot per open window, capped so a browser with a dozen windows can't
