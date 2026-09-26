@@ -6,10 +6,13 @@ import QtQuick.Shapes
 PanelWindow {
     id: dock
 
-    // Room above the dock plate for the magnified icon, the new-instance
+    // Room inward from the dock plate for the magnified icon, the new-instance
     // button, and the tooltip stacked above both.
-    readonly property int headroom: 34 + (Config.newInstanceButton
-        ? Config.newInstanceSize + Config.newInstanceGap : 0)
+    // Horizontal docks only need vertical headroom for the tooltip height + button.
+    // Vertical docks need horizontal headroom for the tooltip width.
+    readonly property int headroom: isVertical
+        ? Math.max(140, 40 + (Config.newInstanceButton ? Config.newInstanceSize + Config.newInstanceGap : 0))
+        : (34 + (Config.newInstanceButton ? Config.newInstanceSize + Config.newInstanceGap : 0))
     readonly property int plateHeight: Config.cellSize + Config.dockPadding * 2
     readonly property int appsWidth: orderModel.count > 0
         ? (orderModel.count * Config.cellSize + Math.max(0, orderModel.count - 1) * Config.spacing)
@@ -25,6 +28,13 @@ PanelWindow {
     // id -> DesktopEntry, kept alongside the ListModel (which holds ids only).
     property var entryMap: ({})
 
+    // ---- direction & orientation ------------------------------------------
+    readonly property bool isVertical: Config.position === "left" || Config.position === "right"
+    readonly property bool isBottom: Config.position === "bottom"
+    readonly property bool isTop: Config.position === "top"
+    readonly property bool isLeft: Config.position === "left"
+    readonly property bool isRight: Config.position === "right"
+
     // ---- auto-hide --------------------------------------------------------
 
     // An auto-hiding dock has to touch the screen edge to be reachable, so it
@@ -38,80 +48,157 @@ PanelWindow {
     // while the dock slides.
     readonly property int cornerSize: cornersActive ? Config.cornerSize : 0
 
-    // How much of the plate is currently on screen: full height when revealed,
-    // down to peekHeight when hidden.
-    readonly property real visiblePlateHeight: plateHeight - plate.y
+    // How far down the plate is pushed when hidden, leaving peekHeight showing.
+    readonly property int hiddenOffset: plateHeight - Config.peekHeight
 
-    // What peeks above the screen edge is the plate's *top* edge, so on a thin
-    // sliver the rounded top corner and the edge fillet compete for the same few
-    // pixels -- and since the dock is one continuous path, their arcs can't
-    // overlap vertically or the outline doubles back on itself.
-    //
-    // The radius gets first claim and the fillet takes what's left (capped again
-    // by peekFilletShare), because the alternative leaves a thin sliver looking
-    // like a flat-ended box. So a thin sliver is a pure rounded cap, and the
-    // flare grows in as the dock expands past the radius.
-    readonly property real plateTopRadius: Math.min(
-        Config.radius, visiblePlateHeight)
+    // 0 fully out, 1 fully tucked away.
+    readonly property real slideProgress: {
+        if (hiddenOffset <= 0) return 0;
+        if (isBottom) return Math.max(0, Math.min(1, plate.y / hiddenOffset));
+        if (isTop) return Math.max(0, Math.min(1, (gap - plate.y) / hiddenOffset));
+        if (isLeft) return Math.max(0, Math.min(1, (gap - plate.x) / hiddenOffset));
+        if (isRight) return Math.max(0, Math.min(1, plate.x / hiddenOffset));
+        return 0;
+    }
 
+    readonly property real visiblePlateHeight: plateHeight - (hiddenOffset * slideProgress)
+    readonly property real plateTopRadius: Math.min(Config.radius, visiblePlateHeight)
     readonly property real activeCornerSize: cornersActive
         ? Math.max(0, Math.min(Config.cornerSize,
                                visiblePlateHeight * Config.peekFilletShare,
                                visiblePlateHeight - plateTopRadius))
         : 0
-
-    // Bottom corners: the fillets take over when they're active, otherwise a
-    // floating dock rounds them off like the top.
     readonly property real plateBottomRadius: cornersActive ? 0 : Config.radius
 
-    // Outline of the whole dock, in `silhouette`'s coordinates. Convex corners
-    // sweep one way (SVG flag 1), the concave fillets the other (flag 0).
     readonly property string silhouettePath: {
-        const o = Config.cornerSize;          // horizontal room reserved for fillets
-        const left = o;
-        const right = o + body.width;
-        const top = plate.y;
-        // Fillets pin to the screen edge; a floating dock ends at the plate.
-        const bottom = cornersActive ? body.height : plate.y + plateHeight;
+        if (!cornersActive || gap > 0) {
+            const pw = plate.width;
+            const ph = plate.height;
+            const px = plate.x;
+            const py = plate.y;
+            const r = Math.min(Config.radius, pw / 2, ph / 2);
+            return "M " + (px + r) + " " + py +
+                   " L " + (px + pw - r) + " " + py +
+                   " A " + r + " " + r + " 0 0 1 " + (px + pw) + " " + (py + r) +
+                   " L " + (px + pw) + " " + (py + ph - r) +
+                   " A " + r + " " + r + " 0 0 1 " + (px + pw - r) + " " + (py + ph) +
+                   " L " + (px + r) + " " + (py + ph) +
+                   " A " + r + " " + r + " 0 0 1 " + px + " " + (py + ph - r) +
+                   " L " + px + " " + (py + r) +
+                   " A " + r + " " + r + " 0 0 1 " + (px + r) + " " + py + " Z";
+        }
 
+        const o = cornerSize;
         const r = plateTopRadius;
         const f = activeCornerSize;
         const rb = plateBottomRadius;
 
-        const p = ["M " + (left + r) + " " + top, "L " + (right - r) + " " + top];
-        if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + right + " " + (top + r));
-
-        if (f > 0) {
-            p.push("L " + right + " " + (bottom - f));
-            p.push("A " + f + " " + f + " 0 0 0 " + (right + f) + " " + bottom);
-            p.push("L " + (left - f) + " " + bottom);
-            p.push("A " + f + " " + f + " 0 0 0 " + left + " " + (bottom - f));
-        } else if (rb > 0) {
-            p.push("L " + right + " " + (bottom - rb));
-            p.push("A " + rb + " " + rb + " 0 0 1 " + (right - rb) + " " + bottom);
-            p.push("L " + (left + rb) + " " + bottom);
-            p.push("A " + rb + " " + rb + " 0 0 1 " + left + " " + (bottom - rb));
-        } else {
-            p.push("L " + right + " " + bottom, "L " + left + " " + bottom);
+        if (isBottom) {
+            const left = o;
+            const right = o + body.width;
+            const top = plate.y;
+            const bottom = body.height;
+            const p = ["M " + (left + r) + " " + top, "L " + (right - r) + " " + top];
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + right + " " + (top + r));
+            if (f > 0) {
+                p.push("L " + right + " " + (bottom - f));
+                p.push("A " + f + " " + f + " 0 0 0 " + (right + f) + " " + bottom);
+                p.push("L " + (left - f) + " " + bottom);
+                p.push("A " + f + " " + f + " 0 0 0 " + left + " " + (bottom - f));
+            } else if (rb > 0) {
+                p.push("L " + right + " " + (bottom - rb));
+                p.push("A " + rb + " " + rb + " 0 0 1 " + (right - rb) + " " + bottom);
+                p.push("L " + (left + rb) + " " + bottom);
+                p.push("A " + rb + " " + rb + " 0 0 1 " + left + " " + (bottom - rb));
+            } else {
+                p.push("L " + right + " " + bottom, "L " + left + " " + bottom);
+            }
+            p.push("L " + left + " " + (top + r));
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + (left + r) + " " + top);
+            p.push("Z");
+            return p.join(" ");
         }
 
-        p.push("L " + left + " " + (top + r));
-        if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + (left + r) + " " + top);
-        p.push("Z");
+        if (isTop) {
+            const left = o;
+            const right = o + body.width;
+            const top = 0;
+            const bottom = plate.y + plateHeight;
+            const p = [];
+            if (f > 0) {
+                p.push("M " + (left - f) + " " + top);
+                p.push("L " + (right + f) + " " + top);
+                p.push("A " + f + " " + f + " 0 0 0 " + right + " " + (top + f));
+            } else {
+                p.push("M " + left + " " + top);
+                p.push("L " + right + " " + top);
+            }
+            p.push("L " + right + " " + (bottom - r));
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + (right - r) + " " + bottom);
+            p.push("L " + (left + r) + " " + bottom);
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + left + " " + (bottom - r));
+            if (f > 0) {
+                p.push("L " + left + " " + (top + f));
+                p.push("A " + f + " " + f + " 0 0 0 " + (left - f) + " " + top);
+            } else {
+                p.push("L " + left + " " + top);
+            }
+            p.push("Z");
+            return p.join(" ");
+        }
 
-        return p.join(" ");
+        if (isLeft) {
+            const top = o;
+            const bottom = o + body.height;
+            const left = 0;
+            const right = plate.x + plateHeight;
+            const p = [];
+            if (f > 0) {
+                p.push("M " + left + " " + (top - f));
+                p.push("A " + f + " " + f + " 0 0 0 " + (left + f) + " " + top);
+            } else {
+                p.push("M " + left + " " + top);
+            }
+            p.push("L " + (right - r) + " " + top);
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + right + " " + (top + r));
+            p.push("L " + right + " " + (bottom - r));
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + (right - r) + " " + bottom);
+            if (f > 0) {
+                p.push("L " + (left + f) + " " + bottom);
+                p.push("A " + f + " " + f + " 0 0 0 " + left + " " + (bottom + f));
+            } else {
+                p.push("L " + left + " " + bottom);
+            }
+            p.push("L " + left + " " + (f > 0 ? (top - f) : top));
+            p.push("Z");
+            return p.join(" ");
+        }
+
+        if (isRight) {
+            const top = o;
+            const bottom = o + body.height;
+            const right = body.width;
+            const left = plate.x;
+            const p = ["M " + (left + r) + " " + top];
+            if (f > 0) {
+                p.push("L " + (right - f) + " " + top);
+                p.push("A " + f + " " + f + " 0 0 0 " + right + " " + (top - f));
+                p.push("L " + right + " " + (bottom + f));
+                p.push("A " + f + " " + f + " 0 0 0 " + (right - f) + " " + bottom);
+            } else {
+                p.push("L " + right + " " + top);
+                p.push("L " + right + " " + bottom);
+            }
+            p.push("L " + (left + r) + " " + bottom);
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + left + " " + (bottom - r));
+            p.push("L " + left + " " + (top + r));
+            if (r > 0) p.push("A " + r + " " + r + " 0 0 1 " + (left + r) + " " + top);
+            p.push("Z");
+            return p.join(" ");
+        }
+
+        return "";
     }
-
-    // How far down the plate is pushed when hidden, leaving peekHeight showing.
-    readonly property int hiddenOffset: plateHeight - Config.peekHeight
-
-    // 0 fully out, 1 fully tucked away. Taken from where the plate actually is
-    // rather than from `revealed`, so anything driven off it rides the existing
-    // slide animation instead of needing one of its own -- a second animation
-    // would have to be kept in step with the first by hand.
-    readonly property real slideProgress: hiddenOffset > 0
-        ? Math.max(0, Math.min(1, plate.y / hiddenOffset))
-        : 0
 
     // Full strength while out, easing to peekOpacity as it goes.
     readonly property real plateOpacity: 1 - slideProgress * (1 - Config.peekOpacity)
@@ -191,14 +278,19 @@ PanelWindow {
         onTriggered: dock.revealed = false
     }
 
-    // Anchoring only the bottom edge lets the layer shell centre us horizontally.
-    anchors.bottom: true
+    anchors.bottom: isBottom
+    anchors.top: isTop
+    anchors.left: isLeft
+    anchors.right: isRight
     margins.bottom: 0
+    margins.top: 0
+    margins.left: 0
+    margins.right: 0
 
     // The corners hang off either side of the plate, so the window has to be
     // wide enough to draw them; the plate itself stays centred within it.
-    implicitWidth: plateWidth + cornerSize * 2
-    implicitHeight: plateHeight + headroom + gap
+    implicitWidth: isVertical ? (plateHeight + headroom + gap) : (plateWidth + cornerSize * 2)
+    implicitHeight: isVertical ? (plateWidth + cornerSize * 2) : (plateHeight + headroom + gap)
 
     color: "transparent"
     exclusiveZone: !Config.reserveSpace ? 0
@@ -207,25 +299,21 @@ PanelWindow {
 
     // Only the visible part of the plate takes input; everything else in the
     // window (headroom, and the hidden portion of the plate) clicks through to
-    // whatever is underneath. While hidden the region is widened up to
-    // triggerHeight so the sliver is still easy to hit.
-    // plate.y is relative to body, so lift it into window coordinates.
+    // whatever is underneath.
     readonly property int plateTop: body.y + plate.y
-    readonly property int maskTop: Math.min(
-        plateTop, dock.height - Math.max(Config.peekHeight, Config.triggerHeight))
 
     mask: Region {
-        x: body.x
-        y: dock.maskTop
-        width: body.width
-        height: dock.height - dock.maskTop
+        x: isLeft ? 0 : isRight ? Math.min(body.x + plate.x, dock.width - Math.max(Config.peekHeight, Config.triggerHeight)) : body.x
+        y: isTop ? 0 : isBottom ? Math.min(body.y + plate.y, dock.height - Math.max(Config.peekHeight, Config.triggerHeight)) : body.y
+        width: isLeft ? Math.max(body.x + plate.x + dock.plateHeight, Math.max(Config.peekHeight, Config.triggerHeight))
+             : isRight ? (dock.width - x)
+             : body.width
+        height: isTop ? Math.max(body.y + plate.y + dock.plateHeight, Math.max(Config.peekHeight, Config.triggerHeight))
+              : isBottom ? (dock.height - y)
+              : body.height
 
         // The button sits in the headroom, which is click-through by default,
         // so it has to add itself back in while it's up.
-        //
-        // The geometry is given twice on purpose: `item` is what the region
-        // actually measures, while the explicit bindings are what notice the
-        // button sliding to a different icon and ask for a rebuild.
         Region {
             item: dock.launchShown ? launcher : null
             x: launcher.x
@@ -345,10 +433,10 @@ PanelWindow {
     Item {
         id: body
 
-        x: (dock.width - dock.plateWidth) / 2
-        y: dock.height - dock.gap - dock.plateHeight
-        width: dock.plateWidth
-        height: dock.plateHeight + dock.gap
+        x: isVertical ? (isRight ? dock.headroom : 0) : dock.cornerSize
+        y: isVertical ? dock.cornerSize : (isBottom ? dock.headroom : 0)
+        width: isVertical ? (dock.plateHeight + dock.gap) : dock.plateWidth
+        height: isVertical ? dock.plateWidth : (dock.plateHeight + dock.gap)
 
         // Fades the plate and its icons together as one group, so they don't
         // blend through each other on the way out. The input mask is untouched,
@@ -359,34 +447,34 @@ PanelWindow {
 
         // Geometry only -- the dock is drawn by `silhouette` below. Everything
         // still positions against this (the icon row, the tooltip, the input
-        // mask), and its animated y is what drives the slide.
+        // mask), and its animated position is what drives the slide.
         Item {
             id: plate
 
-            y: dock.revealed ? 0 : dock.hiddenOffset
-            width: body.width
-            height: dock.plateHeight
+            x: isLeft ? (dock.revealed ? dock.gap : (dock.gap - dock.hiddenOffset))
+             : isRight ? (dock.revealed ? 0 : dock.hiddenOffset)
+             : 0
+            y: isTop ? (dock.revealed ? dock.gap : (dock.gap - dock.hiddenOffset))
+             : isBottom ? (dock.revealed ? 0 : dock.hiddenOffset)
+             : 0
+            width: isVertical ? dock.plateHeight : body.width
+            height: isVertical ? body.height : dock.plateHeight
 
+            Behavior on x {
+                NumberAnimation { duration: Config.slideDuration; easing.type: Easing.OutCubic }
+            }
             Behavior on y {
                 NumberAnimation { duration: Config.slideDuration; easing.type: Easing.OutCubic }
             }
         }
 
-        // The whole dock outline -- rounded top, sides, and either the edge
-        // fillets or rounded bottom corners -- as ONE path.
-        //
-        // It was a Rectangle plus two separate Corner items, which meant the
-        // outline couldn't be stroked: Rectangle borders apply to all four edges
-        // at once, so the hairline ran down the sides and straight across the
-        // join with the fillets. One continuous path strokes cleanly, and also
-        // avoids double-blending where translucent shapes would have overlapped.
         Shape {
             id: silhouette
 
-            x: -Config.cornerSize
-            y: 0
-            width: body.width + Config.cornerSize * 2
-            height: body.height
+            x: isVertical ? 0 : -dock.cornerSize
+            y: isVertical ? -dock.cornerSize : 0
+            width: isVertical ? body.width : (body.width + dock.cornerSize * 2)
+            height: isVertical ? (body.height + dock.cornerSize * 2) : body.height
 
             preferredRendererType: Shape.CurveRenderer
 
@@ -398,19 +486,21 @@ PanelWindow {
             }
         }
 
-        Row {
+        Item {
             id: contentRow
             anchors.centerIn: plate
-            height: Config.cellSize
-            spacing: 0
+            width: isVertical ? Config.cellSize : (dock.plateWidth - Config.dockPadding * 2)
+            height: isVertical ? (dock.plateWidth - Config.dockPadding * 2) : Config.cellSize
 
             ListView {
                 id: list
 
-                width: dock.appsWidth
-                height: Config.cellSize
+                x: 0
+                y: 0
+                width: isVertical ? Config.cellSize : dock.appsWidth
+                height: isVertical ? dock.appsWidth : Config.cellSize
 
-                orientation: ListView.Horizontal
+                orientation: isVertical ? ListView.Vertical : ListView.Horizontal
                 spacing: Config.spacing
                 interactive: false
                 clip: false
@@ -515,7 +605,7 @@ PanelWindow {
                     property bool didDrag: false
 
                     drag.target: (dragArea.pressedButtons & Qt.LeftButton) ? content : null
-                    drag.axis: Drag.XAxis
+                    drag.axis: isVertical ? Drag.YAxis : Drag.XAxis
                     // Don't start dragging until the pointer has clearly moved.
                     drag.threshold: 8
 
@@ -570,18 +660,20 @@ PanelWindow {
             }
         }
 
-            // macOS-style vertical separator
+            // Separator
             Item {
                 id: separatorItem
                 visible: dock.appsWidth > 0
-                width: dock.separatorTotalWidth
-                height: Config.cellSize
+                x: isVertical ? 0 : dock.appsWidth
+                y: isVertical ? dock.appsWidth : 0
+                width: isVertical ? Config.cellSize : dock.separatorTotalWidth
+                height: isVertical ? dock.separatorTotalWidth : Config.cellSize
 
                 Rectangle {
                     anchors.centerIn: parent
-                    width: dock.separatorWidth
-                    height: Math.round(Config.iconSize * 0.72)
-                    radius: width / 2
+                    width: isVertical ? Math.round(Config.iconSize * 0.72) : dock.separatorWidth
+                    height: isVertical ? dock.separatorWidth : Math.round(Config.iconSize * 0.72)
+                    radius: (isVertical ? height : width) / 2
                     color: Config.border
                 }
             }
@@ -589,6 +681,8 @@ PanelWindow {
             // Settings button
             Item {
                 id: settingsCell
+                x: isVertical ? 0 : (dock.appsWidth + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0))
+                y: isVertical ? (dock.appsWidth + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0)) : 0
                 width: Config.cellSize
                 height: Config.cellSize
 
@@ -697,8 +791,8 @@ PanelWindow {
 
         readonly property var cell: dock.launchCell
 
-        width: Config.cellSize
-        height: Config.newInstanceSize + Config.newInstanceGap + Config.dockPadding
+        width: isVertical ? (Config.newInstanceSize + Config.newInstanceGap + Config.dockPadding) : Config.cellSize
+        height: isVertical ? Config.cellSize : (Config.newInstanceSize + Config.newInstanceGap + Config.dockPadding)
 
         visible: opacity > 0
         opacity: dock.launchShown ? 1 : 0
@@ -706,12 +800,20 @@ PanelWindow {
             NumberAnimation { duration: 120 }
         }
 
-        // Bottom edge lands on the icon's own top edge, not the plate's.
-        y: dock.plateTop + Config.dockPadding - height
         x: {
+            if (isLeft) return body.x + plate.x + dock.plateHeight - Config.dockPadding;
+            if (isRight) return body.x + plate.x + Config.dockPadding - width;
             if (!cell) return 0;
             const centre = cell.mapToItem(null, cell.width / 2, 0).x;
             return Math.max(0, Math.min(dock.width - width, centre - width / 2));
+        }
+
+        y: {
+            if (isBottom) return body.y + plate.y + Config.dockPadding - height;
+            if (isTop) return body.y + plate.y + dock.plateHeight - Config.dockPadding;
+            if (!cell) return 0;
+            const centre = cell.mapToItem(null, 0, cell.height / 2).y;
+            return Math.max(0, Math.min(dock.height - height, centre - height / 2));
         }
 
         MouseArea {
@@ -730,7 +832,12 @@ PanelWindow {
         Rectangle {
             id: launchButton
 
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.horizontalCenter: isVertical ? undefined : parent.horizontalCenter
+            anchors.verticalCenter: isVertical ? parent.verticalCenter : undefined
+            anchors.top: isBottom ? parent.top : undefined
+            anchors.bottom: isTop ? parent.bottom : undefined
+            anchors.left: isRight ? parent.left : undefined
+            anchors.right: isLeft ? parent.right : undefined
             width: Config.newInstanceSize
             height: Config.newInstanceSize
             radius: height / 2
@@ -814,17 +921,28 @@ PanelWindow {
         width: label.implicitWidth + 18
         height: label.implicitHeight + 10
 
-        // Sits above the new-instance button when that's up, so the two don't
-        // stack on top of each other.
-        y: (dock.launchShown ? launcher.y : dock.plateTop) - height - 6
-        x: {
+        y: {
+            if (isBottom) return (dock.launchShown ? launcher.y : (body.y + plate.y)) - height - 6;
+            if (isTop) return (dock.launchShown ? (launcher.y + launcher.height) : (body.y + plate.y + dock.plateHeight)) + 6;
             const anchor = targetAnchor || activeAnchor;
-            if (!anchor || !anchor.parent) return 0;
+            if (!anchor || !anchor.parent) return tooltip.y;
+            try {
+                const centre = anchor.mapToItem(null, 0, anchor.height / 2).y;
+                return Math.max(0, Math.min(dock.height - height, centre - height / 2));
+            } catch (e) {
+                return tooltip.y;
+            }
+        }
+        x: {
+            if (isLeft) return (dock.launchShown ? (launcher.x + launcher.width) : (body.x + plate.x + dock.plateHeight)) + 6;
+            if (isRight) return (dock.launchShown ? launcher.x : (body.x + plate.x)) - width - 6;
+            const anchor = targetAnchor || activeAnchor;
+            if (!anchor || !anchor.parent) return tooltip.x;
             try {
                 const centre = anchor.mapToItem(null, anchor.width / 2, 0).x;
                 return Math.max(0, Math.min(dock.width - width, centre - width / 2));
             } catch (e) {
-                return 0;
+                return tooltip.x;
             }
         }
 

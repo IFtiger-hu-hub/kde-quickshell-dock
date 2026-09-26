@@ -18,6 +18,9 @@ Singleton {
         spacing: 2,
         dockPadding: 4,
         bottomMargin: 0,
+        position: "bottom",
+        screenMode: "all",
+        targetScreen: "",
         radius: 15,
         edgeCorners: true,
         cornerSize: 10,
@@ -61,6 +64,9 @@ Singleton {
     property int spacing: defaults.spacing
     property int dockPadding: defaults.dockPadding
     property int bottomMargin: defaults.bottomMargin
+    property string position: defaults.position
+    property string screenMode: defaults.screenMode
+    property string targetScreen: defaults.targetScreen
     property int radius: defaults.radius
 
     readonly property int cellSize: iconSize + cellPadding * 2

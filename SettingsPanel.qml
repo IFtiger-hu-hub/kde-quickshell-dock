@@ -4,13 +4,15 @@ import QtQuick
 PopupWindow {
     id: root
 
-    anchor.edges: Edges.Top
-    anchor.gravity: Edges.Top
+    anchor.edges: Config.position === "top" ? Edges.Bottom
+                : Config.position === "left" ? Edges.Right
+                : Config.position === "right" ? Edges.Left
+                : Edges.Top
+    anchor.gravity: anchor.edges
     anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
 
-    // 460 width, 560 height to accommodate the 16px bottom floating gap
-    implicitWidth: 460
-    implicitHeight: 560
+    implicitWidth: 460 + (Config.position === "left" || Config.position === "right" ? 10 : 0)
+    implicitHeight: 560 + (Config.position === "top" || Config.position === "bottom" ? 10 : 0)
     color: "transparent"
 
     // Click-through on transparent areas (including the gap between panel and dock)
@@ -245,14 +247,14 @@ PopupWindow {
         }
     }
 
-    // Main Card background (with 16px bottom floating gap from the dock)
+    // Main Card background (with 16px floating gap towards the dock)
     Rectangle {
         id: card
         anchors.fill: parent
-        anchors.leftMargin: 6
-        anchors.rightMargin: 6
-        anchors.topMargin: 6
-        anchors.bottomMargin: 16 // 16px floating gap between settings panel and dock bar!
+        anchors.leftMargin: Config.position === "left" ? 16 : 6
+        anchors.rightMargin: Config.position === "right" ? 16 : 6
+        anchors.topMargin: Config.position === "top" ? 16 : 6
+        anchors.bottomMargin: Config.position === "bottom" ? 16 : 6
         radius: 14
         color: "#f21b1f28"
         border.width: 1
@@ -380,10 +382,11 @@ PopupWindow {
                 spacing: 6
 
                 readonly property var tabs: [
-                    { id: 0, name: "尺寸与间距" },
-                    { id: 1, name: "自动隐藏" },
-                    { id: 2, name: "动效交互" },
-                    { id: 3, name: "运行与来源" }
+                    { id: 0, name: "位置与屏幕" },
+                    { id: 1, name: "尺寸与间距" },
+                    { id: 2, name: "自动隐藏" },
+                    { id: 3, name: "动效交互" },
+                    { id: 4, name: "运行与来源" }
                 ]
 
                 Repeater {
@@ -391,7 +394,7 @@ PopupWindow {
 
                     Rectangle {
                         required property var modelData
-                        width: 98
+                        width: 78
                         height: 26
                         radius: 6
                         color: root.currentTab === modelData.id
@@ -404,7 +407,7 @@ PopupWindow {
                             anchors.centerIn: parent
                             text: modelData.name
                             color: root.currentTab === modelData.id ? "#ffffff" : "#a2aab8"
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             font.weight: root.currentTab === modelData.id ? Font.DemiBold : Font.Normal
                         }
 
@@ -447,11 +450,205 @@ PopupWindow {
                 width: flick.width
                 spacing: 4
 
-                // ==================== TAB 0: 尺寸与间距 ====================
+                // ==================== TAB 0: 位置与屏幕 ====================
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    visible: root.currentTab === 0
+
+                    // 1. 停靠边缘
+                    Item {
+                        width: parent.width
+                        height: 56
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Text {
+                                text: "停靠边缘"
+                                color: "#f0f0f5"
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                text: "选择 Dock 在屏幕上显示的方向"
+                                color: "#8e95a5"
+                                font.pixelSize: 11
+                            }
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 4
+
+                            readonly property var positions: [
+                                { key: "bottom", label: "⬇ 底部" },
+                                { key: "top", label: "⬆ 顶部" },
+                                { key: "left", label: "⬅ 左侧" },
+                                { key: "right", label: "➡ 右侧" }
+                            ]
+
+                            Repeater {
+                                model: parent.positions
+
+                                Rectangle {
+                                    required property var modelData
+                                    width: 50
+                                    height: 28
+                                    radius: 6
+                                    color: Config.position === modelData.key ? "#388bfd" : posHover.containsMouse ? "#20ffffff" : "#12ffffff"
+                                    border.width: 1
+                                    border.color: Config.position === modelData.key ? "#58a6ff" : "#20ffffff"
+
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: modelData.label
+                                        color: Config.position === modelData.key ? "#ffffff" : "#d0d7de"
+                                        font.pixelSize: 11
+                                        font.weight: Config.position === modelData.key ? Font.DemiBold : Font.Normal
+                                    }
+
+                                    MouseArea {
+                                        id: posHover
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Config.setVal("position", modelData.key)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. 显示屏幕策略
+                    Item {
+                        width: parent.width
+                        height: 56
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Text {
+                                text: "多屏显示策略"
+                                color: "#f0f0f5"
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                text: "单屏显示可大幅降低显存与内存占用"
+                                color: "#8e95a5"
+                                font.pixelSize: 11
+                            }
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 4
+
+                            readonly property var modes: [
+                                { key: "all", label: "全部屏幕" },
+                                { key: "primary", label: "仅主屏幕" },
+                                { key: "custom", label: "指定屏幕" }
+                            ]
+
+                            Repeater {
+                                model: parent.modes
+
+                                Rectangle {
+                                    required property var modelData
+                                    width: 66
+                                    height: 28
+                                    radius: 6
+                                    color: Config.screenMode === modelData.key ? "#388bfd" : modeHover.containsMouse ? "#20ffffff" : "#12ffffff"
+                                    border.width: 1
+                                    border.color: Config.screenMode === modelData.key ? "#58a6ff" : "#20ffffff"
+
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: modelData.label
+                                        color: Config.screenMode === modelData.key ? "#ffffff" : "#d0d7de"
+                                        font.pixelSize: 11
+                                        font.weight: Config.screenMode === modelData.key ? Font.DemiBold : Font.Normal
+                                    }
+
+                                    MouseArea {
+                                        id: modeHover
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Config.setVal("screenMode", modelData.key)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. 当选择“指定屏幕”时，展示当前连接的屏幕列表供选择
+                    Column {
+                        width: parent.width
+                        spacing: 6
+                        visible: Config.screenMode === "custom"
+
+                        Text {
+                            text: "选择目标屏幕："
+                            color: "#c0c7d4"
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                        }
+
+                        Flow {
+                            width: parent.width
+                            spacing: 6
+
+                            Repeater {
+                                model: Quickshell.screens
+
+                                Rectangle {
+                                    required property var modelData
+                                    required property int index
+                                    width: Math.max(90, scrText.implicitWidth + 24)
+                                    height: 30
+                                    radius: 6
+                                    color: Config.targetScreen === modelData.name ? "#388bfd" : scrHover.containsMouse ? "#20ffffff" : "#14ffffff"
+                                    border.width: 1
+                                    border.color: Config.targetScreen === modelData.name ? "#58a6ff" : "#20ffffff"
+
+                                    Text {
+                                        id: scrText
+                                        anchors.centerIn: parent
+                                        text: (modelData.name || ("屏幕 " + index)) + (index === 0 ? " (主)" : "")
+                                        color: Config.targetScreen === modelData.name ? "#ffffff" : "#d0d7de"
+                                        font.pixelSize: 11
+                                    }
+
+                                    MouseArea {
+                                        id: scrHover
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Config.setVal("targetScreen", modelData.name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ==================== TAB 1: 尺寸与间距 ====================
                 Column {
                     width: parent.width
                     spacing: 4
-                    visible: root.currentTab === 0
+                    visible: root.currentTab === 1
 
                     SliderRow {
                         title: "图标大小"
@@ -511,11 +708,11 @@ PopupWindow {
                     }
                 }
 
-                // ==================== TAB 1: 自动隐藏 ====================
+                // ==================== TAB 2: 自动隐藏 ====================
                 Column {
                     width: parent.width
                     spacing: 4
-                    visible: root.currentTab === 1
+                    visible: root.currentTab === 2
 
                     SwitchRow {
                         title: "自动隐藏 Dock"
@@ -565,11 +762,11 @@ PopupWindow {
                     }
                 }
 
-                // ==================== TAB 2: 动效与交互 ====================
+                // ==================== TAB 3: 动效与交互 ====================
                 Column {
                     width: parent.width
                     spacing: 4
-                    visible: root.currentTab === 2
+                    visible: root.currentTab === 3
 
                     SwitchRow {
                         title: "macOS 风格悬停放大"
@@ -609,11 +806,11 @@ PopupWindow {
                     }
                 }
 
-                // ==================== TAB 3: 运行与来源 ====================
+                // ==================== TAB 4: 运行与来源 ====================
                 Column {
                     width: parent.width
                     spacing: 6
-                    visible: root.currentTab === 3
+                    visible: root.currentTab === 4
 
                     SwitchRow {
                         title: "显示运行中的应用"
