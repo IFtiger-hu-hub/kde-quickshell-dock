@@ -177,6 +177,21 @@ Singleton {
         return true;
     }
 
+    // Publishes the icon screen geometry to KWin for authentic Magic Lamp (Genie effect) window minimize/restore
+    function publishGeometry(key, x, y, width, height) {
+        if (!key) return;
+        if (isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height)) return;
+        const rec = root.info(key);
+        if (!rec) return;
+        const row = tasks.index(rec.row, 0);
+        if (!row || !row.valid) return;
+        try {
+            tasks.requestPublishDelegateGeometry(row, Qt.rect(Math.round(x), Math.round(y), Math.round(width), Math.round(height)));
+        } catch (e) {
+            // Ignored if compositor does not support delegate geometry
+        }
+    }
+
     // ---- model ------------------------------------------------------------
 
     TaskManager.TasksModel {

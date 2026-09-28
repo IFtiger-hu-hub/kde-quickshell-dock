@@ -2,20 +2,57 @@ import Quickshell
 import QtQuick
 import QtQuick.Effects
 
-// The visual for one dock cell: highlight plate, application icon, and the
-// running badge in its top-left corner.
+// The visual for one dock cell: macOS style parabolic wave icon, centered bottom
+// running indicator dot, launch bounce animation, tactile press feedback, and drag-and-drop.
 Item {
     id: root
 
+    property var dockRef: null
+    readonly property var d: dockRef ? dockRef : (typeof dock !== "undefined" ? dock : null)
+
+    readonly property int iconSize: d ? d.iconSize : Config.iconSize
+    readonly property string dockPosition: d ? d.dockPosition : root.dockPosition
+    readonly property int radius: d ? d.radius : Config.radius
+    readonly property bool hoverMagnify: d ? d.hoverMagnify : Config.hoverMagnify
+    readonly property real hoverScale: d ? d.hoverScale : root.hoverScale
+    readonly property bool bounceOnLaunch: d ? d.bounceOnLaunch : Config.bounceOnLaunch
+    readonly property bool runningIndicator: d ? d.runningIndicator : root.runningIndicator
+    readonly property int indicatorDotSize: d ? d.indicatorDotSize : root.indicatorDotSize
+    readonly property int indicatorActiveDotSize: d ? d.indicatorActiveDotSize : root.indicatorActiveDotSize
+    readonly property color indicatorColor: d ? d.indicatorColor : root.indicatorColor
+    readonly property color indicatorActiveColor: d ? d.indicatorActiveColor : root.indicatorActiveColor
+
     required property var entry
     property bool hovered: false
+    property bool pressed: false
     property bool dragging: false
 
     // How many windows this app has open, and whether one of them has focus.
     property int windows: 0
     property bool active: false
-
     readonly property bool running: windows > 0
+
+    // True while launching an app until its window appears
+    property bool launching: false
+
+    onWindowsChanged: {
+        if (windows > 0) {
+            root.launching = false;
+        }
+    }
+
+    Timer {
+        id: launchTimeoutTimer
+        interval: 6000
+        repeat: false
+        onTriggered: root.launching = false
+    }
+
+    // Wave scale & lift passed down from dock wave engine
+    property real currentScale: 1.0
+    property real liftX: 0
+    property real liftY: 0
+    property real bounceY: 0
 
     // Sources to try in order; advance past any that fail to load.
     readonly property var sources: IconResolver.candidates(entry)
@@ -24,11 +61,113 @@ Item {
 
     onSourcesChanged: attempt = 0
 
+    function launch() {
+        rippleAnim.restart();
+        if (!root.running) {
+            root.launching = true;
+            launchTimeoutTimer.restart();
+            if (root.bounceOnLaunch) {
+                launchBounce.restart();
+            }
+        } else {
+            raiseNudge.restart();
+        }
+    }
+
+    // Continuous rhythm bouncing while app is booting up (macOS behavior)
+    SequentialAnimation {
+        id: launchBounce
+        running: false
+        loops: root.launching ? Animation.Infinite : 1
+
+        NumberAnimation {
+            target: root
+            property: "bounceY"
+            from: 0; to: -15
+            duration: 160
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: root
+            property: "bounceY"
+            from: -15; to: 0
+            duration: 180
+            easing.type: Easing.InQuad
+        }
+        NumberAnimation {
+            target: root
+            property: "bounceY"
+            from: 0; to: -7
+            duration: 110
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: root
+            property: "bounceY"
+            from: -7; to: 0
+            duration: 130
+            easing.type: Easing.OutBounce
+        }
+    }
+
+    // Gentle raise nudge when switching to an already-running app
+    SequentialAnimation {
+        id: raiseNudge
+        running: false
+        NumberAnimation {
+            target: root
+            property: "bounceY"
+            from: 0; to: -7
+            duration: 90
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: root
+            property: "bounceY"
+            from: -7; to: 0
+            duration: 120
+            easing.type: Easing.OutQuad
+        }
+    }
+
+    // Click Ripple wave expanding from center
+    Rectangle {
+        id: clickRipple
+        anchors.centerIn: parent
+        width: root.iconSize
+        height: width
+        radius: width / 2
+        color: "transparent"
+        border.color: "#80ffffff"
+        border.width: 1.5
+        opacity: 0
+        scale: 0.8
+    }
+
+    ParallelAnimation {
+        id: rippleAnim
+        NumberAnimation {
+            target: clickRipple
+            property: "scale"
+            from: 0.8; to: 1.45
+            duration: 250
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: clickRipple
+            property: "opacity"
+            from: 0.8; to: 0
+            duration: 250
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    // Drag placeholder highlight
     Rectangle {
         anchors.fill: parent
-        radius: 10
+        radius: root.radius
         color: root.dragging ? Config.dragHighlight
-             : root.hovered  ? Config.hoverHighlight
+             : (root.hovered && !root.hoverMagnify) ? Config.hoverHighlight
              : "transparent"
 
         Behavior on color {
@@ -36,88 +175,130 @@ Item {
         }
     }
 
-    Image {
-        id: icon
+    // Icon Container with Parabolic Wave Magnification & Bottom Anchoring
+    Item {
+        id: iconWrapper
 
         anchors.centerIn: parent
-        width: Config.iconSize
-        height: Config.iconSize
+        width: root.iconSize
+        height: root.iconSize
 
-        // Render at the magnified size so scaling up stays crisp.
-        sourceSize.width: Math.round(Config.iconSize * Config.hoverScale)
-        sourceSize.height: Math.round(Config.iconSize * Config.hoverScale)
+        // Press depression haptic scale (0.90 on press)
+        scale: root.currentScale * (root.pressed ? 0.90 : 1.0)
+        transformOrigin: root.dockPosition === "top" ? Item.Top
+                       : root.dockPosition === "left" ? Item.Left
+                       : root.dockPosition === "right" ? Item.Right
+                       : Item.Bottom
 
-        asynchronous: true
-        fillMode: Image.PreserveAspectFit
-        source: root.iconSource
-
-        onStatusChanged: {
-            if (status === Image.Error && root.attempt < root.sources.length - 1) root.attempt++;
-        }
-
-        scale: Config.hoverMagnify && root.hovered && !root.dragging ? Config.hoverScale : 1.0
+        y: (parent.height - height) / 2 + root.liftY + root.bounceY
+        x: (parent.width - width) / 2 + root.liftX
 
         Behavior on scale {
-            NumberAnimation { duration: 140; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+            enabled: !dock.pointerInside && !root.dragging
+            NumberAnimation { duration: 140; easing.type: Easing.OutQuad }
+        }
+
+        Behavior on y {
+            enabled: !dock.pointerInside && !launchBounce.running && !raiseNudge.running && !root.dragging
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
+
+        Behavior on x {
+            enabled: !dock.pointerInside && !root.dragging
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
+
+        Image {
+            id: icon
+            anchors.fill: parent
+
+            // Render at high resolution so wave magnification remains razor sharp
+            sourceSize.width: Math.round(root.iconSize * Math.max(1.5, root.hoverScale) * 1.5)
+            sourceSize.height: Math.round(root.iconSize * Math.max(1.5, root.hoverScale) * 1.5)
+
+            asynchronous: true
+            mipmap: true
+            smooth: true
+            fillMode: Image.PreserveAspectFit
+            source: root.iconSource
+
+            onStatusChanged: {
+                if (status === Image.Error && root.attempt < root.sources.length - 1) {
+                    root.attempt++;
+                }
+            }
         }
     }
 
-    // Soft drop shadow only instantiated while the icon is actively being carried
+    // Soft drop shadow only instantiated while the icon is actively being dragged
     Loader {
         active: root.dragging
-        anchors.fill: icon
+        anchors.fill: iconWrapper
         sourceComponent: MultiEffect {
-            source: icon
+            source: iconWrapper
             shadowEnabled: true
             shadowBlur: 0.7
-            shadowColor: "#aa000000"
-            shadowVerticalOffset: 3
+            shadowColor: "#bb000000"
+            shadowVerticalOffset: 4
         }
     }
 
-    // One dot per open window, capped so a browser with a dozen windows can't
-    // run the badge across the whole icon. The accent colour marks the app that
-    // currently has focus.
-    //
-    // Drawn over the icon's top-left corner rather than in a strip of its own,
-    // so running apps don't make the dock any taller. Declared last so it stays
-    // above the artwork.
-    Rectangle {
-        id: indicator
+    // ---- macOS Authentic Centered Running Indicator Dot ----
+    Item {
+        id: indicatorContainer
 
-        x: Config.cellPadding + Config.indicatorInsetX
-        y: Config.cellPadding + Config.indicatorInsetY
-        width: dots.width + Config.indicatorPadding * 2
-        height: dots.height + Config.indicatorPadding * 2
-        radius: height / 2
+        anchors.horizontalCenter: (root.dockPosition === "top" || root.dockPosition === "bottom") ? parent.horizontalCenter : undefined
+        anchors.verticalCenter: (root.dockPosition === "left" || root.dockPosition === "right") ? parent.verticalCenter : undefined
 
-        color: Config.indicatorBackground
+        anchors.bottom: root.dockPosition === "bottom" ? parent.bottom : undefined
+        anchors.top: root.dockPosition === "top" ? parent.top : undefined
+        anchors.left: root.dockPosition === "left" ? parent.left : undefined
+        anchors.right: root.dockPosition === "right" ? parent.right : undefined
+
+        anchors.bottomMargin: root.dockPosition === "bottom" ? 2 : 0
+        anchors.topMargin: root.dockPosition === "top" ? 2 : 0
+        anchors.leftMargin: root.dockPosition === "left" ? 2 : 0
+        anchors.rightMargin: root.dockPosition === "right" ? 2 : 0
+
+        width: 14
+        height: 14
 
         visible: opacity > 0
-        opacity: Config.runningIndicator && root.running && !root.dragging ? 1 : 0
+        opacity: root.runningIndicator && (root.running || root.launching) && !root.dragging ? 1 : 0
         Behavior on opacity {
-            NumberAnimation { duration: 140 }
+            NumberAnimation { duration: 160 }
         }
 
-        Row {
-            id: dots
-
+        // Ambient glow behind active dot
+        Rectangle {
             anchors.centerIn: parent
-            spacing: Config.indicatorSpacing
+            width: dot.width + 4
+            height: width
+            radius: width / 2
+            color: root.active ? "#40ffffff" : "transparent"
+            Behavior on color { ColorAnimation { duration: 150 } }
+        }
 
-            Repeater {
-                model: Math.min(root.windows, Config.indicatorMaxDots)
+        // Running Dot (Pulses softly while launching)
+        Rectangle {
+            id: dot
+            anchors.centerIn: parent
+            width: root.active ? root.indicatorActiveDotSize : root.indicatorDotSize
+            height: width
+            radius: width / 2
 
-                Rectangle {
-                    width: Config.indicatorDotSize
-                    height: Config.indicatorDotSize
-                    radius: height / 2
-                    color: root.active ? Config.indicatorActiveColor : Config.indicatorColor
+            color: root.launching ? "#ffffff"
+                 : root.active ? root.indicatorActiveColor
+                 : root.indicatorColor
 
-                    Behavior on color {
-                        ColorAnimation { duration: 160 }
-                    }
-                }
+            Behavior on width { NumberAnimation { duration: 140 } }
+            Behavior on color { ColorAnimation { duration: 140 } }
+
+            SequentialAnimation on opacity {
+                running: root.launching
+                loops: Animation.Infinite
+                NumberAnimation { from: 0.25; to: 1.0; duration: 380; easing.type: Easing.InOutQuad }
+                NumberAnimation { from: 1.0; to: 0.25; duration: 380; easing.type: Easing.InOutQuad }
             }
         }
     }

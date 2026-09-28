@@ -4,15 +4,24 @@ import QtQuick
 PopupWindow {
     id: root
 
-    anchor.edges: Config.position === "top" ? Edges.Bottom
-                : Config.position === "left" ? Edges.Right
-                : Config.position === "right" ? Edges.Left
+    property string activeScreen: ""
+    property string selectedScreen: {
+        if (activeScreen !== "") return activeScreen;
+        const screens = Quickshell.screens;
+        return (screens && screens.length > 0) ? screens[0].name : "";
+    }
+
+    readonly property string panelPosition: Config.getVal(activeScreen, "position")
+
+    anchor.edges: panelPosition === "top" ? Edges.Bottom
+                : panelPosition === "left" ? Edges.Right
+                : panelPosition === "right" ? Edges.Left
                 : Edges.Top
     anchor.gravity: anchor.edges
     anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
 
-    implicitWidth: 460 + (Config.position === "left" || Config.position === "right" ? 10 : 0)
-    implicitHeight: 560 + (Config.position === "top" || Config.position === "bottom" ? 10 : 0)
+    implicitWidth: 468 + (panelPosition === "left" || panelPosition === "right" ? 10 : 0)
+    implicitHeight: 610 + (panelPosition === "top" || panelPosition === "bottom" ? 10 : 0)
     color: "transparent"
 
     // Click-through on transparent areas (including the gap between panel and dock)
@@ -22,7 +31,24 @@ PopupWindow {
 
     property int currentTab: 0
 
-    // Component for a clean Slider Row with real-time thumb tracking and debounced/throttled commit
+    function getVal(key) {
+        Config.revision;
+        root.selectedScreen;
+        if (Config.perScreenConfig && root.selectedScreen !== "") {
+            return Config.getVal(root.selectedScreen, key);
+        }
+        return Config[key];
+    }
+
+    function setVal(key, val) {
+        if (Config.perScreenConfig && root.selectedScreen !== "") {
+            Config.setScreenVal(root.selectedScreen, key, val);
+        } else {
+            Config.setVal(key, val);
+        }
+    }
+
+    // Component for a clean Slider Row with real-time thumb tracking and debounced commit
     component SliderRow: Item {
         id: sr
         property string title: ""
@@ -34,7 +60,6 @@ PopupWindow {
         property string unit: ""
         signal modified(real val)
 
-        // Local state so thumb tracks cursor with 0ms lag
         property real localVal: value
         onValueChanged: {
             if (!dragArea.pressed && !debounceTimer.running) {
@@ -42,7 +67,6 @@ PopupWindow {
             }
         }
 
-        // Debounce timer: wait 65ms of stillness during drag before updating Config to prevent dock layout jitter
         Timer {
             id: debounceTimer
             interval: 65
@@ -96,19 +120,17 @@ PopupWindow {
             readonly property real normalized: range > 0 ? Math.max(0, Math.min(1, (sr.localVal - sr.min) / range)) : 0
 
             function applyMouse(mouseX) {
-                const trackW = width - 48; // leave room for badge
+                const trackW = width - 48;
                 const ratio = Math.max(0, Math.min(1, mouseX / trackW));
                 let raw = sr.min + ratio * range;
                 if (sr.step > 0) {
                     raw = Math.round(raw / sr.step) * sr.step;
                 }
-                // Cap strictly within min and max
                 raw = Math.max(sr.min, Math.min(sr.max, raw));
                 sr.localVal = raw;
                 debounceTimer.restart();
             }
 
-            // Track background
             Rectangle {
                 id: trackBg
                 x: 0
@@ -118,7 +140,6 @@ PopupWindow {
                 radius: 2.5
                 color: "#28ffffff"
 
-                // Active fill
                 Rectangle {
                     height: parent.height
                     width: parent.width * sliderBox.normalized
@@ -127,7 +148,6 @@ PopupWindow {
                 }
             }
 
-            // Thumb
             Rectangle {
                 x: (parent.width - 48) * sliderBox.normalized - width / 2
                 anchors.verticalCenter: parent.verticalCenter
@@ -142,7 +162,6 @@ PopupWindow {
                 Behavior on scale { NumberAnimation { duration: 100 } }
             }
 
-            // Value badge
             Rectangle {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -247,14 +266,14 @@ PopupWindow {
         }
     }
 
-    // Main Card background (with 16px floating gap towards the dock)
+    // Main Card background
     Rectangle {
         id: card
         anchors.fill: parent
-        anchors.leftMargin: Config.position === "left" ? 16 : 6
-        anchors.rightMargin: Config.position === "right" ? 16 : 6
-        anchors.topMargin: Config.position === "top" ? 16 : 6
-        anchors.bottomMargin: Config.position === "bottom" ? 16 : 6
+        anchors.leftMargin: root.panelPosition === "left" ? 16 : 6
+        anchors.rightMargin: root.panelPosition === "right" ? 16 : 6
+        anchors.topMargin: root.panelPosition === "top" ? 16 : 6
+        anchors.bottomMargin: root.panelPosition === "bottom" ? 16 : 6
         radius: 14
         color: "#f21b1f28"
         border.width: 1
@@ -298,7 +317,7 @@ PopupWindow {
                         font.weight: Font.Bold
                     }
                     Text {
-                        text: "参数修改即时生效并自动保存"
+                        text: Config.perScreenConfig ? ("独立配置已生效 · 正在编辑 " + root.selectedScreen) : "全局配置 · 参数修改即时生效"
                         color: "#8e95a5"
                         font.pixelSize: 11
                     }
@@ -310,6 +329,32 @@ PopupWindow {
                 anchors.rightMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
+
+                // macOS Preset Button
+                Rectangle {
+                    width: 96
+                    height: 26
+                    radius: 6
+                    color: macosHover.containsMouse ? "#30388bfd" : "#18388bfd"
+                    border.width: 1
+                    border.color: "#50388bfd"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: " macOS 风格"
+                        color: "#60a5fa"
+                        font.pixelSize: 11
+                        font.weight: Font.Medium
+                    }
+
+                    MouseArea {
+                        id: macosHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Config.applyMacosPreset(Config.perScreenConfig ? root.selectedScreen : null)
+                    }
+                }
 
                 // Reset Button
                 Rectangle {
@@ -332,7 +377,7 @@ PopupWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: Config.resetDefaults()
+                        onClicked: Config.resetDefaults(Config.perScreenConfig ? root.selectedScreen : null)
                     }
                 }
 
@@ -431,10 +476,76 @@ PopupWindow {
             }
         }
 
+        // ---- Persistent Screen Bar across all tabs when perScreenConfig is active ----
+        Rectangle {
+            id: screenBar
+            visible: Config.perScreenConfig && Quickshell.screens && Quickshell.screens.length > 1
+            anchors.top: tabBar.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: visible ? 40 : 0
+            color: "#161b24"
+
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: 18
+                spacing: 8
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "正在配置屏幕:"
+                    color: "#8e95a5"
+                    font.pixelSize: 11
+                    font.weight: Font.Medium
+                }
+
+                Repeater {
+                    model: Quickshell.screens
+
+                    Rectangle {
+                        required property var modelData
+                        required property int index
+                        height: 26
+                        width: Math.max(86, scrBarLabel.implicitWidth + 20)
+                        radius: 6
+                        color: root.selectedScreen === modelData.name ? "#388bfd" : barHover.containsMouse ? "#28ffffff" : "#14ffffff"
+                        border.width: 1
+                        border.color: root.selectedScreen === modelData.name ? "#58a6ff" : "#20ffffff"
+
+                        Text {
+                            id: scrBarLabel
+                            anchors.centerIn: parent
+                            text: (modelData.name.indexOf("eDP") >= 0 ? "💻 " : "🖥 ") + modelData.name + (modelData.name === root.activeScreen ? " (当前)" : "")
+                            color: root.selectedScreen === modelData.name ? "#ffffff" : "#c0c7d4"
+                            font.pixelSize: 11
+                            font.weight: root.selectedScreen === modelData.name ? Font.DemiBold : Font.Normal
+                        }
+
+                        MouseArea {
+                            id: barHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.selectedScreen = modelData.name
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: "#14ffffff"
+            }
+        }
+
         // ---- Content Area ----
         Flickable {
             id: flick
-            anchors.top: tabBar.bottom
+            anchors.top: screenBar.visible ? screenBar.bottom : tabBar.bottom
             anchors.topMargin: 8
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
@@ -448,15 +559,216 @@ PopupWindow {
             Column {
                 id: contentCol
                 width: flick.width
-                spacing: 4
+                spacing: 6
 
                 // ==================== TAB 0: 位置与屏幕 ====================
                 Column {
                     width: parent.width
-                    spacing: 8
+                    spacing: 10
                     visible: root.currentTab === 0
 
-                    // 1. 停靠边缘
+                    // 1. 多屏幕独立配置主开关卡片
+                    Rectangle {
+                        width: parent.width
+                        height: perScreenCol.height + 20
+                        radius: 8
+                        color: "#161b24"
+                        border.width: 1
+                        border.color: Config.perScreenConfig ? "#30388bfd" : "#20ffffff"
+
+                        Column {
+                            id: perScreenCol
+                            anchors.top: parent.top
+                            anchors.topMargin: 10
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.right: parent.right
+                            anchors.rightMargin: 12
+                            spacing: 8
+
+                            Item {
+                                width: parent.width
+                                height: 44
+
+                                Column {
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 2
+
+                                    Text {
+                                        text: "多屏幕独立配置 (Per-Screen Customization)"
+                                        color: "#f0f0f5"
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        text: "开启后每个显示器可拥有完全独立的停靠位置、尺寸、自动隐藏与外观"
+                                        color: "#8e95a5"
+                                        font.pixelSize: 11
+                                    }
+                                }
+
+                                Item {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 42
+                                    height: 22
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: height / 2
+                                        color: Config.perScreenConfig ? "#388bfd" : "#28ffffff"
+                                        border.width: 1
+                                        border.color: Config.perScreenConfig ? "#4d80ff" : "#20ffffff"
+
+                                        Behavior on color { ColorAnimation { duration: 140 } }
+
+                                        Rectangle {
+                                            x: Config.perScreenConfig ? parent.width - width - 2 : 2
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.height - 4
+                                            height: width
+                                            radius: width / 2
+                                            color: "#ffffff"
+
+                                            Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Config.setPerScreenConfig(!Config.perScreenConfig)
+                                    }
+                                }
+                            }
+
+                            // 独立配置开启时的状态与快捷操作
+                            Column {
+                                width: parent.width
+                                spacing: 8
+                                visible: Config.perScreenConfig
+
+                                Rectangle {
+                                    width: parent.width
+                                    height: 1
+                                    color: "#18ffffff"
+                                }
+
+                                // 选中屏幕是否开启 Dock
+                                Item {
+                                    width: parent.width
+                                    height: 38
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 2
+                                        Text {
+                                            text: "在此屏幕上启用 Dock"
+                                            color: "#e2e8f0"
+                                            font.pixelSize: 12
+                                            font.weight: Font.Medium
+                                        }
+                                        Text {
+                                            text: "目标屏幕: " + root.selectedScreen
+                                            color: "#717d91"
+                                            font.pixelSize: 10
+                                        }
+                                    }
+
+                                    Item {
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 38
+                                        height: 20
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: height / 2
+                                            color: root.getVal("enabled") !== false ? "#388bfd" : "#28ffffff"
+                                            border.width: 1
+                                            border.color: root.getVal("enabled") !== false ? "#4d80ff" : "#20ffffff"
+
+                                            Behavior on color { ColorAnimation { duration: 140 } }
+
+                                            Rectangle {
+                                                x: root.getVal("enabled") !== false ? parent.width - width - 2 : 2
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: parent.height - 4
+                                                height: width
+                                                radius: width / 2
+                                                color: "#ffffff"
+
+                                                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.setVal("enabled", root.getVal("enabled") === false ? true : false)
+                                        }
+                                    }
+                                }
+
+                                // 快捷操作按钮
+                                Row {
+                                    spacing: 8
+
+                                    Rectangle {
+                                        width: 140
+                                        height: 26
+                                        radius: 6
+                                        color: cpGlobalHover.containsMouse ? "#25ffffff" : "#14ffffff"
+                                        border.width: 1
+                                        border.color: "#28ffffff"
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "📋 复制全局配置至此"
+                                            color: "#d0d7de"
+                                            font.pixelSize: 11
+                                        }
+
+                                        MouseArea {
+                                            id: cpGlobalHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Config.copyGlobalToScreen(root.selectedScreen)
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: 130
+                                        height: 26
+                                        radius: 6
+                                        color: rstScrHover.containsMouse ? "#25ef4444" : "#14ffffff"
+                                        border.width: 1
+                                        border.color: rstScrHover.containsMouse ? "#50ef4444" : "#28ffffff"
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "🔄 重置此屏幕配置"
+                                            color: rstScrHover.containsMouse ? "#f87171" : "#d0d7de"
+                                            font.pixelSize: 11
+                                        }
+
+                                        MouseArea {
+                                            id: rstScrHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Config.resetScreenConfig(root.selectedScreen)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. 停靠边缘
                     Item {
                         width: parent.width
                         height: 56
@@ -467,7 +779,7 @@ PopupWindow {
                             spacing: 2
 
                             Text {
-                                text: "停靠边缘"
+                                text: "停靠边缘" + (Config.perScreenConfig ? (" (" + root.selectedScreen + ")") : "")
                                 color: "#f0f0f5"
                                 font.pixelSize: 13
                                 font.weight: Font.Medium
@@ -499,18 +811,18 @@ PopupWindow {
                                     width: 50
                                     height: 28
                                     radius: 6
-                                    color: Config.position === modelData.key ? "#388bfd" : posHover.containsMouse ? "#20ffffff" : "#12ffffff"
+                                    color: root.getVal("position") === modelData.key ? "#388bfd" : posHover.containsMouse ? "#20ffffff" : "#12ffffff"
                                     border.width: 1
-                                    border.color: Config.position === modelData.key ? "#58a6ff" : "#20ffffff"
+                                    border.color: root.getVal("position") === modelData.key ? "#58a6ff" : "#20ffffff"
 
                                     Behavior on color { ColorAnimation { duration: 100 } }
 
                                     Text {
                                         anchors.centerIn: parent
                                         text: modelData.label
-                                        color: Config.position === modelData.key ? "#ffffff" : "#d0d7de"
+                                        color: root.getVal("position") === modelData.key ? "#ffffff" : "#d0d7de"
                                         font.pixelSize: 11
-                                        font.weight: Config.position === modelData.key ? Font.DemiBold : Font.Normal
+                                        font.weight: root.getVal("position") === modelData.key ? Font.DemiBold : Font.Normal
                                     }
 
                                     MouseArea {
@@ -518,17 +830,18 @@ PopupWindow {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: Config.setVal("position", modelData.key)
+                                        onClicked: root.setVal("position", modelData.key)
                                     }
                                 }
                             }
                         }
                     }
 
-                    // 2. 显示屏幕策略
+                    // 3. 全局模式下的显示屏幕策略 (仅在 perScreenConfig 为关闭时显示)
                     Item {
                         width: parent.width
                         height: 56
+                        visible: !Config.perScreenConfig
 
                         Column {
                             anchors.left: parent.left
@@ -593,11 +906,11 @@ PopupWindow {
                         }
                     }
 
-                    // 3. 当选择“指定屏幕”时，展示当前连接的屏幕列表供选择
+                    // 4. 当选择“指定屏幕”时展示当前连接的屏幕列表供选择
                     Column {
                         width: parent.width
                         spacing: 6
-                        visible: Config.screenMode === "custom"
+                        visible: !Config.perScreenConfig && Config.screenMode === "custom"
 
                         Text {
                             text: "选择目标屏幕："
@@ -654,57 +967,57 @@ PopupWindow {
                         title: "图标大小"
                         desc: "单个应用图标的像素尺寸"
                         min: 24; max: 64; step: 1
-                        value: Config.iconSize; unit: " px"
-                        onModified: val => Config.setVal("iconSize", Math.round(val))
+                        value: root.getVal("iconSize"); unit: " px"
+                        onModified: val => root.setVal("iconSize", Math.round(val))
                     }
 
                     SliderRow {
                         title: "单元格内边距"
                         desc: "图标与悬浮高亮边框的间距"
                         min: 0; max: 8; step: 1
-                        value: Config.cellPadding; unit: " px"
-                        onModified: val => Config.setVal("cellPadding", Math.round(val))
+                        value: root.getVal("cellPadding"); unit: " px"
+                        onModified: val => root.setVal("cellPadding", Math.round(val))
                     }
 
                     SliderRow {
                         title: "图标间隙"
                         desc: "相邻应用图标之间的间距"
                         min: 0; max: 16; step: 1
-                        value: Config.spacing; unit: " px"
-                        onModified: val => Config.setVal("spacing", Math.round(val))
+                        value: root.getVal("spacing"); unit: " px"
+                        onModified: val => root.setVal("spacing", Math.round(val))
                     }
 
                     SliderRow {
                         title: "Dock 底板内边距"
                         desc: "底板外边缘到图标之间的留白"
                         min: 2; max: 14; step: 1
-                        value: Config.dockPadding; unit: " px"
-                        onModified: val => Config.setVal("dockPadding", Math.round(val))
+                        value: root.getVal("dockPadding"); unit: " px"
+                        onModified: val => root.setVal("dockPadding", Math.round(val))
                     }
 
                     SliderRow {
                         title: "底板圆角半径"
                         desc: "Dock 两端及顶部的圆角大小"
                         min: 4; max: 26; step: 1
-                        value: Config.radius; unit: " px"
-                        onModified: val => Config.setVal("radius", Math.round(val))
+                        value: root.getVal("radius"); unit: " px"
+                        onModified: val => root.setVal("radius", Math.round(val))
                     }
 
                     SliderRow {
                         title: "底板不透明度"
                         desc: "半透明毛玻璃背景的实心程度"
                         min: 0.1; max: 1.0; step: 0.05
-                        value: Config.backgroundOpacity
+                        value: root.getVal("backgroundOpacity")
                         unit: "%"
-                        onModified: val => Config.setVal("backgroundOpacity", val)
+                        onModified: val => root.setVal("backgroundOpacity", val)
                     }
 
                     SliderRow {
                         title: "高精度边框粗细"
                         desc: "Dock 外轮廓单路径描边线条粗细"
                         min: 0; max: 3; step: 0.5
-                        value: Config.borderWidth; unit: " px"
-                        onModified: val => Config.setVal("borderWidth", val)
+                        value: root.getVal("borderWidth"); unit: " px"
+                        onModified: val => root.setVal("borderWidth", val)
                     }
                 }
 
@@ -716,49 +1029,49 @@ PopupWindow {
 
                     SwitchRow {
                         title: "自动隐藏 Dock"
-                        desc: "不使用时向屏幕底部滑动收起"
-                        checked: Config.autoHide
-                        onToggled: val => Config.setVal("autoHide", val)
+                        desc: "不使用时向屏幕边缘滑动收起"
+                        checked: root.getVal("autoHide")
+                        onToggled: val => root.setVal("autoHide", val)
                     }
 
                     SliderRow {
                         title: "隐藏露出高度 (Peek)"
-                        desc: "收起后露在屏幕底部的细条高度"
+                        desc: "收起后露在屏幕边缘的细条高度"
                         min: 0; max: 32; step: 2
-                        value: Config.peekHeight; unit: " px"
-                        onModified: val => Config.setVal("peekHeight", Math.round(val))
+                        value: root.getVal("peekHeight"); unit: " px"
+                        onModified: val => root.setVal("peekHeight", Math.round(val))
                     }
 
                     SliderRow {
                         title: "隐藏细条不透明度"
                         desc: "收起细条的可见度 (设为 0 完全隐形)"
                         min: 0.0; max: 1.0; step: 0.05
-                        value: Config.peekOpacity; unit: ""
-                        onModified: val => Config.setVal("peekOpacity", val)
+                        value: root.getVal("peekOpacity"); unit: ""
+                        onModified: val => root.setVal("peekOpacity", val)
                     }
 
                     SliderRow {
                         title: "感应召唤区高度"
                         desc: "鼠标移动至屏幕边缘唤醒 Dock 的感应高度"
                         min: 4; max: 24; step: 2
-                        value: Config.triggerHeight; unit: " px"
-                        onModified: val => Config.setVal("triggerHeight", Math.round(val))
+                        value: root.getVal("triggerHeight"); unit: " px"
+                        onModified: val => root.setVal("triggerHeight", Math.round(val))
                     }
 
                     SliderRow {
                         title: "离开隐藏延迟"
                         desc: "鼠标移开后等待收起的停留时间"
                         min: 100; max: 1000; step: 50
-                        value: Config.hideDelay; unit: " ms"
-                        onModified: val => Config.setVal("hideDelay", Math.round(val))
+                        value: root.getVal("hideDelay"); unit: " ms"
+                        onModified: val => root.setVal("hideDelay", Math.round(val))
                     }
 
                     SliderRow {
                         title: "滑动动画时长"
                         desc: "弹出与收起动画的平滑耗时"
                         min: 50; max: 300; step: 25
-                        value: Config.slideDuration; unit: " ms"
-                        onModified: val => Config.setVal("slideDuration", Math.round(val))
+                        value: root.getVal("slideDuration"); unit: " ms"
+                        onModified: val => root.setVal("slideDuration", Math.round(val))
                     }
                 }
 
@@ -771,38 +1084,74 @@ PopupWindow {
                     SwitchRow {
                         title: "macOS 风格悬停放大"
                         desc: "鼠标悬停在图标上时带有回弹放大动画"
-                        checked: Config.hoverMagnify
-                        onToggled: val => Config.setVal("hoverMagnify", val)
+                        checked: root.getVal("hoverMagnify")
+                        onToggled: val => root.setVal("hoverMagnify", val)
                     }
 
                     SliderRow {
                         title: "悬停放大倍率"
-                        desc: "悬停时图标的缩放比例"
-                        min: 1.05; max: 1.5; step: 0.02
-                        value: Config.hoverScale; unit: "x"
-                        onModified: val => Config.setVal("hoverScale", val)
+                        desc: "波浪鱼眼放大中心的最高缩放比例"
+                        min: 1.05; max: 1.8; step: 0.02
+                        value: root.getVal("hoverScale"); unit: "x"
+                        onModified: val => root.setVal("hoverScale", val)
+                    }
+
+                    SliderRow {
+                        title: "波浪影响范围 (Wave Spread)"
+                        desc: "连续抛物线扩散影响的相邻图标数量"
+                        min: 1.2; max: 3.5; step: 0.1
+                        value: root.getVal("waveSpread"); unit: " 单元"
+                        onModified: val => root.setVal("waveSpread", val)
+                    }
+
+                    SwitchRow {
+                        title: "点击启动跳跃动效"
+                        desc: "点击应用图标时呈现 macOS 标志性上下跳跃反馈"
+                        checked: root.getVal("bounceOnLaunch")
+                        onToggled: val => root.setVal("bounceOnLaunch", val)
+                    }
+
+                    SwitchRow {
+                        title: "顶部微光反射条"
+                        desc: "Dock 顶边缘呈现 Apple 晶莹质感的 1px 细微高光反光"
+                        checked: root.getVal("glassHighlight")
+                        onToggled: val => root.setVal("glassHighlight", val)
+                    }
+
+                    SwitchRow {
+                        title: "柔和环境投影 (Shadow)"
+                        desc: "浮动状态下底板四周呈现弥散环境深色柔光投影"
+                        checked: root.getVal("shadowEnabled")
+                        onToggled: val => root.setVal("shadowEnabled", val)
+                    }
+
+                    SwitchRow {
+                        title: "显示废纸篓 (Trash)"
+                        desc: "在右侧控制区展示 macOS 废纸篓快捷入口与右键清空操作"
+                        checked: root.getVal("showTrash")
+                        onToggled: val => root.setVal("showTrash", val)
                     }
 
                     SwitchRow {
                         title: "底边反向平滑过渡角"
                         desc: "Dock 贴底时两侧自然向外扩出融入底边"
-                        checked: Config.edgeCorners
-                        onToggled: val => Config.setVal("edgeCorners", val)
+                        checked: root.getVal("edgeCorners")
+                        onToggled: val => root.setVal("edgeCorners", val)
                     }
 
                     SliderRow {
                         title: "反向角外扩弧度"
                         desc: "两侧反向圆角的大小"
                         min: 4; max: 24; step: 2
-                        value: Config.cornerSize; unit: " px"
-                        onModified: val => Config.setVal("cornerSize", Math.round(val))
+                        value: root.getVal("cornerSize"); unit: " px"
+                        onModified: val => root.setVal("cornerSize", Math.round(val))
                     }
 
                     SwitchRow {
                         title: "独占屏幕空间 (Reserve Space)"
                         desc: "开启后最大化窗口将自动避让 Dock"
-                        checked: Config.reserveSpace
-                        onToggled: val => Config.setVal("reserveSpace", val)
+                        checked: root.getVal("reserveSpace")
+                        onToggled: val => root.setVal("reserveSpace", val)
                     }
                 }
 
@@ -815,44 +1164,44 @@ PopupWindow {
                     SwitchRow {
                         title: "显示运行中的应用"
                         desc: "未加入收藏但正在运行的应用也会动态显示在 Dock 上"
-                        checked: Config.showRunningApps
-                        onToggled: val => Config.setVal("showRunningApps", val)
+                        checked: root.getVal("showRunningApps")
+                        onToggled: val => root.setVal("showRunningApps", val)
                     }
 
                     SwitchRow {
                         title: "运行状态指示点"
-                        desc: "图标左上角根据窗口数量显示圆点"
-                        checked: Config.runningIndicator
-                        onToggled: val => Config.setVal("runningIndicator", val)
+                        desc: "图标下方居中显示 macOS 风格纯白晶莹圆点"
+                        checked: root.getVal("runningIndicator")
+                        onToggled: val => root.setVal("runningIndicator", val)
                     }
 
                     SliderRow {
                         title: "指示点上限数量"
                         desc: "防止一个应用开过多窗口把图标遮满"
                         min: 1; max: 5; step: 1
-                        value: Config.indicatorMaxDots; unit: " 个"
-                        onModified: val => Config.setVal("indicatorMaxDots", Math.round(val))
+                        value: root.getVal("indicatorMaxDots"); unit: " 个"
+                        onModified: val => root.setVal("indicatorMaxDots", Math.round(val))
                     }
 
                     SwitchRow {
                         title: "点击唤醒与轮转窗口"
                         desc: "点击运行中应用激活窗口，多窗口连续点击切换"
-                        checked: Config.raiseRunning
-                        onToggled: val => Config.setVal("raiseRunning", val)
+                        checked: root.getVal("raiseRunning")
+                        onToggled: val => root.setVal("raiseRunning", val)
                     }
 
                     SwitchRow {
                         title: "单窗口点击最小化"
                         desc: "仅打开一个窗口时，点击已激活的图标可将其最小化"
-                        checked: Config.minimizeActive
-                        onToggled: val => Config.setVal("minimizeActive", val)
+                        checked: root.getVal("minimizeActive")
+                        onToggled: val => root.setVal("minimizeActive", val)
                     }
 
                     SwitchRow {
                         title: "悬停显示 “+” 新开按钮"
                         desc: "悬停在已运行应用上方时浮现新建窗口按钮"
-                        checked: Config.newInstanceButton
-                        onToggled: val => Config.setVal("newInstanceButton", val)
+                        checked: root.getVal("newInstanceButton")
+                        onToggled: val => root.setVal("newInstanceButton", val)
                     }
 
                     // Source Selector
@@ -886,7 +1235,7 @@ PopupWindow {
                                 width: 90
                                 height: 26
                                 radius: 6
-                                color: Config.source === "kickoff" ? "#388bfd" : "#20ffffff"
+                                color: root.getVal("source") === "kickoff" ? "#388bfd" : "#20ffffff"
                                 Text {
                                     anchors.centerIn: parent
                                     text: "Kickoff 收藏"
@@ -896,7 +1245,7 @@ PopupWindow {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Config.setVal("source", "kickoff")
+                                    onClicked: root.setVal("source", "kickoff")
                                 }
                             }
 
@@ -904,7 +1253,7 @@ PopupWindow {
                                 width: 90
                                 height: 26
                                 radius: 6
-                                color: Config.source === "taskmanager" ? "#388bfd" : "#20ffffff"
+                                color: root.getVal("source") === "taskmanager" ? "#388bfd" : "#20ffffff"
                                 Text {
                                     anchors.centerIn: parent
                                     text: "任务栏固定"
@@ -914,7 +1263,7 @@ PopupWindow {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Config.setVal("source", "taskmanager")
+                                    onClicked: root.setVal("source", "taskmanager")
                                 }
                             }
                         }
@@ -948,6 +1297,7 @@ PopupWindow {
                             spacing: 8
 
                             readonly property var colors: [
+                                { hex: "#20242c", name: "macOS 深灰" },
                                 { hex: "#1c1f26", name: "经典黑" },
                                 { hex: "#161922", name: "深海蓝" },
                                 { hex: "#0d1117", name: "曜石黑" },
@@ -962,13 +1312,13 @@ PopupWindow {
                                     height: 24
                                     radius: 12
                                     color: modelData.hex
-                                    border.width: Config.backgroundColor == modelData.hex ? 2 : 1
-                                    border.color: Config.backgroundColor == modelData.hex ? "#388bfd" : "#50ffffff"
+                                    border.width: root.getVal("backgroundColor") == modelData.hex ? 2 : 1
+                                    border.color: root.getVal("backgroundColor") == modelData.hex ? "#388bfd" : "#50ffffff"
 
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: Config.setVal("backgroundColor", modelData.hex)
+                                        onClicked: root.setVal("backgroundColor", modelData.hex)
                                     }
                                 }
                             }

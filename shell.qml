@@ -3,14 +3,27 @@
 import Quickshell
 
 ShellRoot {
-    // Dynamically filter active screens based on Config.screenMode ("all", "primary", "custom")
-    // Only instantiates Dock on selected screens, significantly saving memory and GPU resources.
+    // Dynamically filter active screens based on perScreenConfig or screenMode ("all", "primary", "custom")
     Variants {
         model: {
             Config.screenMode;
             Config.targetScreen;
+            Config.perScreenConfig;
+            Config.revision;
             const screens = Quickshell.screens;
             if (!screens || screens.length === 0) return [];
+
+            if (Config.perScreenConfig) {
+                const result = [];
+                for (let i = 0; i < screens.length; i++) {
+                    const scName = screens[i].name;
+                    if (Config.getVal(scName, "enabled") !== false) {
+                        result.push(screens[i]);
+                    }
+                }
+                return result;
+            }
+
             if (Config.screenMode === "primary") {
                 return [screens[0]];
             }

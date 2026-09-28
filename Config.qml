@@ -7,58 +7,151 @@ import QtQuick
 Singleton {
     id: root
 
+    // ---- Multi-Screen Independent Configuration ----
+    property bool perScreenConfig: false
+    property var screensConfig: ({})
+    property int revision: 0
+
+    function getVal(screenName, key) {
+        root.revision;
+        if (root.perScreenConfig && screenName && root.screensConfig && root.screensConfig[screenName]) {
+            const sc = root.screensConfig[screenName];
+            if (sc && sc.hasOwnProperty(key)) {
+                return sc[key];
+            }
+        }
+        return root[key];
+    }
+
+    function setScreenVal(screenName, key, val) {
+        if (!screenName || !root.perScreenConfig) {
+            setVal(key, val);
+            return;
+        }
+        const copy = JSON.parse(JSON.stringify(root.screensConfig || {}));
+        if (!copy[screenName]) {
+            copy[screenName] = {};
+            for (const k in defaults) {
+                copy[screenName][k] = root[k];
+            }
+        }
+        copy[screenName][key] = val;
+        root.screensConfig = copy;
+        root.revision++;
+        saveTimer.restart();
+    }
+
+    function setPerScreenConfig(enabled) {
+        if (enabled && !root.perScreenConfig) {
+            enablePerScreenConfig();
+        } else {
+            root.perScreenConfig = enabled;
+            root.revision++;
+            saveTimer.restart();
+        }
+    }
+
+    function enablePerScreenConfig() {
+        const copy = JSON.parse(JSON.stringify(root.screensConfig || {}));
+        const screens = Quickshell.screens || [];
+        for (let i = 0; i < screens.length; i++) {
+            const name = screens[i].name;
+            if (!copy[name]) {
+                const sc = {};
+                for (const k in defaults) {
+                    sc[k] = root[k];
+                }
+                copy[name] = sc;
+            }
+        }
+        root.screensConfig = copy;
+        root.perScreenConfig = true;
+        root.revision++;
+        saveTimer.restart();
+    }
+
+    function copyGlobalToScreen(screenName) {
+        if (!screenName) return;
+        const copy = JSON.parse(JSON.stringify(root.screensConfig || {}));
+        const sc = {};
+        for (const k in defaults) {
+            sc[k] = root[k];
+        }
+        copy[screenName] = sc;
+        root.screensConfig = copy;
+        root.revision++;
+        saveTimer.restart();
+    }
+
+    function resetScreenConfig(screenName) {
+        if (!screenName) return;
+        const copy = JSON.parse(JSON.stringify(root.screensConfig || {}));
+        delete copy[screenName];
+        root.screensConfig = copy;
+        root.revision++;
+        saveTimer.restart();
+    }
+
     // ---- Persistence ----
     readonly property string statePath: Quickshell.statePath("dock-config.json")
     property bool ready: false
 
-    // Default configuration values
+    // Default configuration values - Tuned for Authentic macOS Dock Aesthetics
     readonly property var defaults: ({
-        iconSize: 35,
-        cellPadding: 2,
-        spacing: 2,
-        dockPadding: 4,
-        bottomMargin: 0,
+        enabled: true,
+        iconSize: 44,
+        cellPadding: 4,
+        spacing: 6,
+        dockPadding: 7,
+        bottomMargin: 6,
         position: "bottom",
         screenMode: "all",
         targetScreen: "",
-        radius: 15,
-        edgeCorners: true,
+        radius: 20,
+        edgeCorners: false,
         cornerSize: 10,
         peekFilletShare: 0.25,
         source: "kickoff",
-        autoHide: true,
+        autoHide: false,
         peekHeight: 16,
         peekOpacity: 0.4,
         triggerHeight: 8,
         hideDelay: 250,
         revealGrace: 300,
-        slideDuration: 100,
+        slideDuration: 140,
         reserveSpace: false,
         hoverMagnify: true,
-        hoverScale: 1.22,
+        hoverScale: 1.45,
+        waveSpread: 2.2,
+        bounceOnLaunch: true,
         raiseRunning: true,
         minimizeActive: true,
         showRunningApps: true,
         runningIndicator: true,
         indicatorDotSize: 4,
+        indicatorActiveDotSize: 5,
         indicatorSpacing: 3,
-        indicatorMaxDots: 3,
-        indicatorInsetX: 2,
-        indicatorInsetY: 0,
-        indicatorPadding: 3,
-        newInstanceButton: true,
-        newInstanceSize: 20,
-        newInstanceGap: 5,
+        indicatorMaxDots: 1,
+        indicatorInsetX: 0,
+        indicatorInsetY: 2,
+        indicatorPadding: 2,
+        newInstanceButton: false,
+        newInstanceSize: 18,
+        newInstanceGap: 4,
         newInstanceStroke: 2,
-        backgroundColor: "#1c1f26",
-        backgroundOpacity: 0.8,
-        border: "#33ffffff",
+        backgroundColor: "#20242c",
+        backgroundOpacity: 0.58,
+        border: "#30ffffff",
         borderWidth: 1,
-        indicatorColor: "#ffa8e6a0",
-        indicatorActiveColor: "#ff52e05c"
+        glassHighlight: true,
+        shadowEnabled: true,
+        showTrash: true,
+        indicatorColor: "#b8ffffff",
+        indicatorActiveColor: "#ffffff"
     })
 
-    // ---- Geometry ----
+    // ---- Screen Enabled & Geometry ----
+    property bool enabled: defaults.enabled
     property int iconSize: defaults.iconSize
     property int cellPadding: defaults.cellPadding
     property int spacing: defaults.spacing
@@ -88,10 +181,12 @@ Singleton {
     property int revealGrace: defaults.revealGrace
     property int slideDuration: defaults.slideDuration
 
-    // ---- Behaviour ----
+    // ---- Behaviour & Magnification ----
     property bool reserveSpace: defaults.reserveSpace
     property bool hoverMagnify: defaults.hoverMagnify
     property real hoverScale: defaults.hoverScale
+    property real waveSpread: defaults.waveSpread
+    property bool bounceOnLaunch: defaults.bounceOnLaunch
 
     // ---- Running apps ----
     property bool raiseRunning: defaults.raiseRunning
@@ -99,6 +194,7 @@ Singleton {
     property bool showRunningApps: defaults.showRunningApps
     property bool runningIndicator: defaults.runningIndicator
     property int indicatorDotSize: defaults.indicatorDotSize
+    property int indicatorActiveDotSize: defaults.indicatorActiveDotSize
     property int indicatorSpacing: defaults.indicatorSpacing
     property int indicatorMaxDots: defaults.indicatorMaxDots
     property int indicatorInsetX: defaults.indicatorInsetX
@@ -110,7 +206,7 @@ Singleton {
     property int newInstanceSize: defaults.newInstanceSize
     property int newInstanceGap: defaults.newInstanceGap
     property int newInstanceStroke: defaults.newInstanceStroke
-    readonly property string newInstanceLabel: "New window"
+    readonly property string newInstanceLabel: "新建窗口"
 
     // ---- Appearance ----
     property color backgroundColor: defaults.backgroundColor
@@ -121,16 +217,20 @@ Singleton {
 
     property color border: defaults.border
     property real borderWidth: defaults.borderWidth
-    readonly property color hoverHighlight: "#22ffffff"
-    readonly property color dragHighlight: "#33ffffff"
-    readonly property color indicatorBackground: "#b3000000"
+    property bool glassHighlight: defaults.glassHighlight
+    property bool shadowEnabled: defaults.shadowEnabled
+    property bool showTrash: defaults.showTrash
+
+    readonly property color hoverHighlight: "#1effffff"
+    readonly property color dragHighlight: "#2affffff"
+    readonly property color indicatorBackground: "#40000000"
     property color indicatorColor: defaults.indicatorColor
     property color indicatorActiveColor: defaults.indicatorActiveColor
 
     readonly property color newInstanceBackground: "#f5343b49"
     readonly property color newInstanceHoverBackground: "#ff4b5570"
     readonly property color newInstanceForeground: "#ffffff"
-    readonly property color tooltipBackground: "#f01c1f26"
+    readonly property color tooltipBackground: "#e01c1f26"
     readonly property color tooltipText: "#ffffff"
 
     // Setter function to update property and trigger debounced persist
@@ -140,11 +240,61 @@ Singleton {
         saveTimer.restart();
     }
 
-    function resetDefaults() {
-        for (const k in defaults) {
-            root[k] = defaults[k];
+    function resetDefaults(screenName) {
+        if (root.perScreenConfig && screenName) {
+            resetScreenConfig(screenName);
+        } else {
+            for (const k in defaults) {
+                root[k] = defaults[k];
+            }
+            saveTimer.restart();
         }
-        saveTimer.restart();
+    }
+
+    // Force apply the authentic macOS Dock preset
+    function applyMacosPreset(screenName) {
+        const p = {
+            position: "bottom",
+            iconSize: 44,
+            cellPadding: 4,
+            spacing: 6,
+            dockPadding: 7,
+            bottomMargin: 6,
+            radius: 20,
+            edgeCorners: false,
+            autoHide: false,
+            hoverMagnify: true,
+            hoverScale: 1.45,
+            waveSpread: 2.2,
+            bounceOnLaunch: true,
+            runningIndicator: true,
+            indicatorDotSize: 4,
+            indicatorActiveDotSize: 5,
+            indicatorColor: "#b8ffffff",
+            indicatorActiveColor: "#ffffff",
+            backgroundColor: "#20242c",
+            backgroundOpacity: 0.58,
+            border: "#30ffffff",
+            borderWidth: 1,
+            glassHighlight: true,
+            shadowEnabled: true,
+            showRunningApps: true,
+            raiseRunning: true,
+            minimizeActive: true,
+            newInstanceButton: false,
+            showTrash: true,
+            enabled: true
+        };
+        if (root.perScreenConfig && screenName) {
+            for (const k in p) {
+                setScreenVal(screenName, k, p[k]);
+            }
+        } else {
+            for (const k in p) {
+                setVal(k, p[k]);
+            }
+        }
+        persist();
     }
 
     Timer {
@@ -162,6 +312,8 @@ Singleton {
                 obj[k] = root[k];
             }
         }
+        obj["perScreenConfig"] = root.perScreenConfig;
+        obj["screensConfig"] = root.screensConfig;
         configFile.setText(JSON.stringify(obj, null, 2));
     }
 
@@ -185,6 +337,12 @@ Singleton {
                         if (root.defaults.hasOwnProperty(k)) {
                             root[k] = parsed[k];
                         }
+                    }
+                    if (parsed.hasOwnProperty("perScreenConfig")) {
+                        root.perScreenConfig = parsed.perScreenConfig;
+                    }
+                    if (parsed.hasOwnProperty("screensConfig") && typeof parsed.screensConfig === "object") {
+                        root.screensConfig = parsed.screensConfig;
                     }
                 }
             } catch (e) {
