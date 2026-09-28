@@ -911,14 +911,13 @@ PanelWindow {
 
                 Item {
                     id: trashIconWrapper
-                    anchors.centerIn: parent
                     width: dock.iconSize
                     height: dock.iconSize
+                    x: Math.round((parent.width - width) / 2 + trashCell.waveLiftX)
+                    y: Math.round((parent.height - height) / 2 + trashCell.waveLiftY)
 
                     scale: trashCell.targetScale
                     transformOrigin: isBottom ? Item.Bottom : isTop ? Item.Top : isLeft ? Item.Left : Item.Right
-                    y: (parent.height - height) / 2 + trashCell.waveLiftY
-                    x: (parent.width - width) / 2 + trashCell.waveLiftX
 
                     Behavior on scale {
                         enabled: !dock.pointerInside
@@ -964,22 +963,38 @@ PanelWindow {
 
                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                        Image {
-                            id: trashIconImage
+                        // 100% Mathematically Centered Vector Trash Can
+                        Item {
+                            id: trashGlyphContainer
                             anchors.centerIn: parent
-                            width: Math.round(parent.width * 0.60)
-                            height: Math.round(parent.height * 0.60)
-                            source: "image://icon/user-trash"
-                            sourceSize.width: Math.round(dock.iconSize * dock.hoverScale * 1.5)
-                            sourceSize.height: Math.round(dock.iconSize * dock.hoverScale * 1.5)
-                            asynchronous: true
-                            mipmap: true
-                            smooth: true
-                            fillMode: Image.PreserveAspectFit
+                            width: 24
+                            height: 24
+                            transformOrigin: Item.Center
+                            scale: (parent.width * 0.54 / 24) * (trashMouseArea.pressed ? 0.92 : (trashMouseArea.containsMouse ? 1.06 : 1.0))
 
-                            scale: trashMouseArea.pressed ? 0.92 : (trashMouseArea.containsMouse ? 1.06 : 1.0)
                             Behavior on scale {
                                 NumberAnimation { duration: 150; easing.type: Easing.OutBack }
+                            }
+
+                            Shape {
+                                anchors.fill: parent
+                                preferredRendererType: Shape.CurveRenderer
+
+                                ShapePath {
+                                    fillColor: "#f1f5f9"
+                                    strokeWidth: 0
+                                    PathSvg {
+                                        path: "M10 3.2h4c.55 0 1 .45 1 1v1.3H9v-1.3c0-.55.45-1 1-1z M4.5 6.5h15c.55 0 1 .35 1 .8s-.45.8-1 .8h-15c-.55 0-1-.35-1-.8s.45-.8 1-.8z"
+                                    }
+                                }
+
+                                ShapePath {
+                                    fillColor: "#f1f5f9"
+                                    strokeWidth: 0
+                                    PathSvg {
+                                        path: "M6 9.5l1.1 9.8c.11.96.93 1.7 1.9 1.7h6c.97 0 1.79-.74 1.9-1.7l1.1-9.8H6zm3.8 9.5H8.3l-.6-7.8h1.5l.6 7.8zm3 0h-1.6v-7.8h1.6v7.8zm3 0h-1.5l.6-7.8h1.5l-.6 7.8z"
+                                    }
+                                }
                             }
                         }
                     }
@@ -1039,14 +1054,13 @@ PanelWindow {
 
                 Item {
                     id: settingsIconContainer
-                    anchors.centerIn: parent
                     width: dock.iconSize
                     height: dock.iconSize
+                    x: Math.round((parent.width - width) / 2 + settingsCell.waveLiftX)
+                    y: Math.round((parent.height - height) / 2 + settingsCell.waveLiftY)
 
                     scale: settingsCell.targetScale
                     transformOrigin: isBottom ? Item.Bottom : isTop ? Item.Top : isLeft ? Item.Left : Item.Right
-                    y: (parent.height - height) / 2 + settingsCell.waveLiftY
-                    x: (parent.width - width) / 2 + settingsCell.waveLiftX
 
                     Behavior on scale {
                         enabled: !dock.pointerInside
@@ -1096,30 +1110,33 @@ PanelWindow {
 
                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                        Shape {
-                            id: gearShape
+                        // 100% Mathematically Centered Vector Gear
+                        Item {
+                            id: gearContainer
                             anchors.centerIn: parent
-                            width: Math.round(parent.width * 0.54)
-                            height: width
-                            scale: (width / 24) * (settingsMouseArea.pressed ? 0.92 : 1.0)
+                            width: 24
+                            height: 24
                             transformOrigin: Item.Center
+                            scale: (parent.width * 0.54 / 24) * (settingsMouseArea.pressed ? 0.92 : 1.0)
                             rotation: dock.settingsOpen ? 45 : (settingsMouseArea.containsMouse ? 20 : 0)
 
                             Behavior on rotation {
                                 NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
                             }
-
                             Behavior on scale {
                                 NumberAnimation { duration: 150; easing.type: Easing.OutBack }
                             }
 
-                            preferredRendererType: Shape.CurveRenderer
+                            Shape {
+                                anchors.fill: parent
+                                preferredRendererType: Shape.CurveRenderer
 
-                            ShapePath {
-                                fillColor: dock.settingsOpen ? "#ffffff" : "#f1f5f9"
-                                strokeWidth: 0
-                                PathSvg {
-                                    path: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
+                                ShapePath {
+                                    fillColor: dock.settingsOpen ? "#ffffff" : "#f1f5f9"
+                                    strokeWidth: 0
+                                    PathSvg {
+                                        path: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
+                                    }
                                 }
                             }
                         }
