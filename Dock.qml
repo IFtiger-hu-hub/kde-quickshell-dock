@@ -76,10 +76,11 @@ PanelWindow {
     readonly property int separatorMargin: Math.max(5, spacing * 1.5)
     readonly property int separatorTotalWidth: separatorMargin * 2 + separatorWidth
     readonly property int trashWidth: showTrash ? cellSize : 0
-    readonly property int rightSectionWidth: separatorTotalWidth + trashWidth + cellSize
+    readonly property int trashGap: showTrash ? spacing : 0
+    readonly property int rightSectionWidth: separatorTotalWidth + trashWidth + trashGap + cellSize
     readonly property int plateWidth: Math.max(
         cellSize + dockPadding * 2,
-        appsWidth + (appsWidth > 0 ? rightSectionWidth : (trashWidth + cellSize)) + dockPadding * 2)
+        appsWidth + (appsWidth > 0 ? rightSectionWidth : (trashWidth + trashGap + cellSize)) + dockPadding * 2)
 
     // auto-hide
     readonly property int gap: autoHide ? 0 : bottomMargin
@@ -469,8 +470,8 @@ PanelWindow {
     Item {
         id: body
 
-        x: isVertical ? (isRight ? dock.headroom : 0) : dock.cornerSize
-        y: isVertical ? dock.cornerSize : (isBottom ? dock.headroom : 0)
+        x: isVertical ? (isRight ? dock.headroom : 0) : dock.cornerSizeVal
+        y: isVertical ? dock.cornerSizeVal : (isBottom ? dock.headroom : 0)
         width: isVertical ? (dock.plateHeight + dock.gap) : dock.plateWidth
         height: isVertical ? dock.plateWidth : (dock.plateHeight + dock.gap)
 
@@ -891,8 +892,8 @@ PanelWindow {
             // ---- Settings / Control Center Cell ----
             Item {
                 id: settingsCell
-                x: isVertical ? 0 : (dock.appsWidth + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? dock.cellSize : 0))
-                y: isVertical ? (dock.appsWidth + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? dock.cellSize : 0)) : 0
+                x: isVertical ? 0 : (dock.appsWidth + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0))
+                y: isVertical ? (dock.appsWidth + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0)) : 0
                 width: dock.cellSize
                 height: dock.cellSize
 
