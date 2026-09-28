@@ -787,7 +787,7 @@ PanelWindow {
                 }
             }
 
-            // ---- macOS Etched Glass Separator ----
+            // ---- macOS Etched Glass Separator & Dynamic Drag-to-Resize Handle ----
             Item {
                 id: separatorItem
                 visible: dock.appsWidth > 0
@@ -801,7 +801,86 @@ PanelWindow {
                     width: isVertical ? Math.round(dock.iconSize * 0.68) : 1
                     height: isVertical ? 1 : Math.round(dock.iconSize * 0.68)
                     radius: 0.5
-                    color: dock.isLight ? "#25000000" : "#28ffffff"
+                    color: resizeMouseArea.pressed
+                        ? (dock.isLight ? "#0284c7" : "#60a5fa")
+                        : (resizeMouseArea.containsMouse
+                            ? (dock.isLight ? "#38bdf8" : "#93c5fd")
+                            : (dock.isLight ? "#25000000" : "#28ffffff"))
+
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+
+                MouseArea {
+                    id: resizeMouseArea
+                    anchors.fill: parent
+                    // Extended hit zone for effortless grabbing
+                    anchors.leftMargin: isVertical ? 0 : -6
+                    anchors.rightMargin: isVertical ? 0 : -6
+                    anchors.topMargin: isVertical ? -6 : 0
+                    anchors.bottomMargin: isVertical ? -6 : 0
+
+                    hoverEnabled: true
+                    cursorShape: isVertical ? Qt.SplitHCursor : Qt.SplitVCursor
+
+                    property real startPressCoord: 0
+                    property int startIconSize: 44
+                    property bool resizing: false
+
+                    onPressed: mouse => {
+                        resizing = true;
+                        dock.interacting = true;
+                        startIconSize = dock.iconSize;
+                        const mapped = mapToItem(null, mouse.x, mouse.y);
+                        startPressCoord = isVertical ? mapped.x : mapped.y;
+                    }
+
+                    onPositionChanged: mouse => {
+                        if (!pressed || !resizing) return;
+                        const mapped = mapToItem(null, mouse.x, mouse.y);
+                        const currentCoord = isVertical ? mapped.x : mapped.y;
+                        const delta = currentCoord - startPressCoord;
+
+                        let change = 0;
+                        if (isBottom) {
+                            change = -delta;
+                        } else if (isTop) {
+                            change = delta;
+                        } else if (isLeft) {
+                            change = delta;
+                        } else if (isRight) {
+                            change = -delta;
+                        }
+
+                        const target = Math.max(24, Math.min(96, Math.round(startIconSize + change)));
+                        if (target !== dock.iconSize) {
+                            if (Config.perScreenConfig && dock.screenName) {
+                                Config.setScreenVal(dock.screenName, "iconSize", target);
+                            } else {
+                                Config.setVal("iconSize", target);
+                            }
+                        }
+                    }
+
+                    onReleased: {
+                        resizing = false;
+                        dock.interacting = false;
+                        Config.saveTimer.restart();
+                    }
+
+                    onCanceled: {
+                        resizing = false;
+                        dock.interacting = false;
+                    }
+
+                    onDoubleClicked: {
+                        const defSize = 44;
+                        if (Config.perScreenConfig && dock.screenName) {
+                            Config.setScreenVal(dock.screenName, "iconSize", defSize);
+                        } else {
+                            Config.setVal("iconSize", defSize);
+                        }
+                        Config.saveTimer.restart();
+                    }
                 }
             }
 
@@ -1091,7 +1170,9 @@ PanelWindow {
         readonly property var targetAnchor: launchArea.containsMouse
             ? dock.launchCell
             : ((dock.showTrash && trashMouseArea.containsMouse) ? trashCell
-            : (settingsMouseArea.containsMouse ? settingsCell : dock.hoveredCell))
+            : (settingsMouseArea.containsMouse ? settingsCell
+            : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing) ? separatorItem
+            : dock.hoveredCell)))
 
         property var activeAnchor: null
         property string activeText: ""
@@ -1100,7 +1181,8 @@ PanelWindow {
             : launchArea.containsMouse ? Config.newInstanceLabel
             : ((dock.showTrash && trashMouseArea.containsMouse) ? "废纸篓"
             : (settingsMouseArea.containsMouse ? "Dock 设置"
-            : (targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || ""))))
+            : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing) ? ("拖拽调整大小 · " + dock.iconSize + " px")
+            : (targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || "")))))
 
         onTargetAnchorChanged: {
             if (targetAnchor) {

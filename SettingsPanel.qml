@@ -1159,12 +1159,87 @@ PopupWindow {
                             anchors.rightMargin: 14
                             spacing: 2
 
+                            // 快速尺寸预设
+                            Item {
+                                width: parent.width
+                                height: 38
+
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "快速尺寸预设"
+                                    color: root.cTextPrimary
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                }
+
+                                Row {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 6
+
+                                    readonly property var presets: [
+                                        { size: 32, label: "小 (32px)" },
+                                        { size: 44, label: "标准 (44px)" },
+                                        { size: 56, label: "大 (56px)" },
+                                        { size: 72, label: "超大 (72px)" }
+                                    ]
+
+                                    Repeater {
+                                        model: parent.presets
+
+                                        Rectangle {
+                                            required property var modelData
+                                            width: 72
+                                            height: 26
+                                            radius: 6
+                                            color: root.getVal("iconSize") === modelData.size
+                                                ? root.cAccentBg
+                                                : (preHover.containsMouse ? root.cChipHover : root.cChipBg)
+                                            border.width: 1
+                                            border.color: root.getVal("iconSize") === modelData.size ? root.cAccentBorder : root.cChipBorder
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: modelData.label
+                                                color: root.getVal("iconSize") === modelData.size ? root.cAccent : root.cTextSecondary
+                                                font.pixelSize: 11
+                                                font.weight: root.getVal("iconSize") === modelData.size ? Font.DemiBold : Font.Normal
+                                            }
+
+                                            MouseArea {
+                                                id: preHover
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.setVal("iconSize", modelData.size)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
+
                             SliderRow {
-                                title: "图标大小"
-                                desc: "单个应用图标的像素尺寸"
-                                min: 24; max: 64; step: 1
+                                title: "Dock 图标与整体大小"
+                                desc: "单个图标基础尺寸，底板与所有元素随之等比缩放"
+                                min: 24; max: 96; step: 1
                                 value: root.getVal("iconSize"); unit: " px"
                                 onModified: val => root.setVal("iconSize", Math.round(val))
+                            }
+
+                            Item {
+                                width: parent.width
+                                height: 22
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    text: "💡 快捷拖拽：在 Dock 分割线上按住鼠标上下拖移即可直接调整大小，双击复位默认 (44px)。"
+                                    color: root.cTextMuted
+                                    font.pixelSize: 10
+                                }
                             }
 
                             Rectangle { width: parent.width; height: 1; color: root.cDivider }
