@@ -930,18 +930,60 @@ PanelWindow {
                         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
 
-                    Image {
+                    // Soft drop shadow under circular plate
+                    Rectangle {
                         anchors.fill: parent
-                        source: "image://icon/user-trash"
-                        sourceSize.width: Math.round(dock.iconSize * dock.hoverScale * 1.5)
-                        sourceSize.height: Math.round(dock.iconSize * dock.hoverScale * 1.5)
-                        asynchronous: true
-                        mipmap: true
-                        smooth: true
-                        fillMode: Image.PreserveAspectFit
+                        radius: width / 2
+                        color: "#25000000"
+                        y: 1.5
+                        z: -1
+                        visible: dock.shadowEnabled
+                    }
+
+                    // Unified Circular Icon Base Plate (McMojave / macOS style)
+                    Rectangle {
+                        id: trashCirclePlate
+                        anchors.fill: parent
+                        radius: width / 2
+                        gradient: Gradient {
+                            GradientStop {
+                                position: 0.0
+                                color: trashMouseArea.pressed
+                                    ? "#20252e"
+                                    : (trashMouseArea.containsMouse ? "#475162" : "#374151")
+                            }
+                            GradientStop {
+                                position: 1.0
+                                color: trashMouseArea.pressed
+                                    ? "#13171e"
+                                    : (trashMouseArea.containsMouse ? "#28303d" : "#1f2937")
+                            }
+                        }
+                        border.width: 1
+                        border.color: "#30ffffff"
+
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        Image {
+                            id: trashIconImage
+                            anchors.centerIn: parent
+                            width: Math.round(parent.width * 0.60)
+                            height: Math.round(parent.height * 0.60)
+                            source: "image://icon/user-trash"
+                            sourceSize.width: Math.round(dock.iconSize * dock.hoverScale * 1.5)
+                            sourceSize.height: Math.round(dock.iconSize * dock.hoverScale * 1.5)
+                            asynchronous: true
+                            mipmap: true
+                            smooth: true
+                            fillMode: Image.PreserveAspectFit
+
+                            scale: trashMouseArea.pressed ? 0.92 : (trashMouseArea.containsMouse ? 1.06 : 1.0)
+                            Behavior on scale {
+                                NumberAnimation { duration: 150; easing.type: Easing.OutBack }
+                            }
+                        }
                     }
                 }
-
                 MouseArea {
                     id: trashMouseArea
                     anchors.fill: parent
@@ -1016,25 +1058,50 @@ PanelWindow {
                         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
 
-                    // macOS Control Center Rounded Squircle Tile
+                    // Soft drop shadow under circular plate
                     Rectangle {
                         anchors.fill: parent
-                        radius: Math.round(width * 0.22)
+                        radius: width / 2
+                        color: "#25000000"
+                        y: 1.5
+                        z: -1
+                        visible: dock.shadowEnabled
+                    }
+
+                    // Unified Circular Icon Base Plate (McMojave / macOS style)
+                    Rectangle {
+                        id: settingsCirclePlate
+                        anchors.fill: parent
+                        radius: width / 2
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: dock.settingsOpen ? (dock.isLight ? "#dbeafe" : "#454d60") : (dock.isLight ? "#ffffff" : "#323744") }
-                            GradientStop { position: 1.0; color: dock.settingsOpen ? (dock.isLight ? "#bfdbfe" : "#262b35") : (dock.isLight ? "#f1f5f9" : "#1c2028") }
+                            GradientStop {
+                                position: 0.0
+                                color: dock.settingsOpen
+                                    ? "#2563eb"
+                                    : (settingsMouseArea.pressed
+                                        ? "#20252e"
+                                        : (settingsMouseArea.containsMouse ? "#475162" : "#374151"))
+                            }
+                            GradientStop {
+                                position: 1.0
+                                color: dock.settingsOpen
+                                    ? "#1d4ed8"
+                                    : (settingsMouseArea.pressed
+                                        ? "#13171e"
+                                        : (settingsMouseArea.containsMouse ? "#28303d" : "#1f2937"))
+                            }
                         }
                         border.width: 1
-                        border.color: dock.settingsOpen ? "#3b82f6" : (dock.isLight ? "#40cbd5e1" : "#35ffffff")
+                        border.color: dock.settingsOpen ? "#60a5fa" : "#30ffffff"
 
                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
                         Shape {
                             id: gearShape
                             anchors.centerIn: parent
-                            width: Math.round(parent.width * 0.56)
+                            width: Math.round(parent.width * 0.54)
                             height: width
-                            scale: width / 24
+                            scale: (width / 24) * (settingsMouseArea.pressed ? 0.92 : 1.0)
                             transformOrigin: Item.Center
                             rotation: dock.settingsOpen ? 45 : (settingsMouseArea.containsMouse ? 20 : 0)
 
@@ -1042,10 +1109,14 @@ PanelWindow {
                                 NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
                             }
 
+                            Behavior on scale {
+                                NumberAnimation { duration: 150; easing.type: Easing.OutBack }
+                            }
+
                             preferredRendererType: Shape.CurveRenderer
 
                             ShapePath {
-                                fillColor: dock.settingsOpen ? "#2563eb" : (dock.isLight ? "#475569" : "#e8edf5")
+                                fillColor: dock.settingsOpen ? "#ffffff" : "#f1f5f9"
                                 strokeWidth: 0
                                 PathSvg {
                                     path: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
@@ -1054,7 +1125,6 @@ PanelWindow {
                         }
                     }
                 }
-
                 MouseArea {
                     id: settingsMouseArea
                     anchors.fill: parent
