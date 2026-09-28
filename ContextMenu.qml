@@ -5,9 +5,12 @@ import QtQuick
 PopupWindow {
     id: root
 
-    anchor.edges: Config.position === "top" ? Edges.Bottom
-                : Config.position === "left" ? Edges.Right
-                : Config.position === "right" ? Edges.Left
+    property var dockRef: null
+    readonly property string position: dockRef ? dockRef.dockPosition : Config.position
+
+    anchor.edges: position === "top" ? Edges.Bottom
+                : position === "left" ? Edges.Right
+                : position === "right" ? Edges.Left
                 : Edges.Top
     anchor.gravity: anchor.edges
     anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
@@ -70,8 +73,8 @@ PopupWindow {
     grabFocus: true
     onClosed: root.close()
 
-    implicitWidth: card.width + (Config.position === "left" || Config.position === "right" ? 16 : 0)
-    implicitHeight: card.height + (Config.position === "top" || Config.position === "bottom" ? 16 : 0)
+    implicitWidth: card.width + (position === "left" || position === "right" ? 16 : 0)
+    implicitHeight: card.height + (position === "top" || position === "bottom" ? 16 : 0)
 
     color: "transparent"
 
@@ -113,11 +116,11 @@ PopupWindow {
         id: card
         width: 300
         height: mainCol.implicitHeight + 16
-        anchors.left: Config.position === "right" ? parent.left : undefined
-        anchors.right: Config.position === "left" ? parent.right : undefined
-        anchors.horizontalCenter: (Config.position === "top" || Config.position === "bottom") ? parent.horizontalCenter : undefined
-        anchors.bottom: Config.position === "top" ? parent.bottom : undefined
-        anchors.top: Config.position === "top" ? undefined : parent.top
+        anchors.left: position === "right" ? parent.left : undefined
+        anchors.right: position === "left" ? parent.right : undefined
+        anchors.horizontalCenter: (position === "top" || position === "bottom") ? parent.horizontalCenter : undefined
+        anchors.bottom: position === "top" ? parent.bottom : undefined
+        anchors.top: position === "top" ? undefined : parent.top
 
         color: "#f2141824"
         radius: 14

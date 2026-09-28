@@ -719,6 +719,7 @@ PanelWindow {
 
                         anchors.fill: parent
                         hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
 
                         property bool didDrag: false
                         drag.target: (dragArea.pressedButtons & Qt.LeftButton) ? content : null
@@ -866,6 +867,7 @@ PanelWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
 
                     onPositionChanged: mouse => {
                         const mapped = trashCell.mapToItem(contentRow, mouse.x, mouse.y);
@@ -1183,6 +1185,7 @@ PanelWindow {
 
     ContextMenu {
         id: contextMenu
+        dockRef: dock
         visible: false
     }
 
