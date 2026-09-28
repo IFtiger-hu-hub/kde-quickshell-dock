@@ -37,6 +37,7 @@ PanelWindow {
     readonly property color backgroundColor: Config.getVal(screenName, "backgroundColor")
     readonly property real backgroundOpacity: Config.getVal(screenName, "backgroundOpacity")
     readonly property color background: Qt.rgba(backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundOpacity)
+    readonly property bool isLight: (0.299 * backgroundColor.r + 0.587 * backgroundColor.g + 0.114 * backgroundColor.b) > 0.5
     readonly property color border: Config.getVal(screenName, "border")
     readonly property real borderWidth: Config.getVal(screenName, "borderWidth")
     readonly property bool glassHighlight: Config.getVal(screenName, "glassHighlight")
@@ -510,8 +511,8 @@ PanelWindow {
                 anchors.fill: parent
                 radius: dock.radius
                 offset: Qt.vector2d(isLeft ? 4 : isRight ? -4 : 0, isBottom ? 5 : isTop ? -5 : 0)
-                color: "#50000000"
-                blur: 16
+                color: dock.isLight ? "#35000000" : "#50000000"
+                blur: dock.isLight ? 22 : 16
                 spread: 0
                 visible: dock.shadowEnabled && (!dock.cornersActive || dock.gap > 0)
                 z: -1
@@ -542,9 +543,9 @@ PanelWindow {
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
                         GradientStop { position: 0.0; color: "transparent" }
-                        GradientStop { position: 0.2; color: "#55ffffff" }
-                        GradientStop { position: 0.5; color: "#80ffffff" }
-                        GradientStop { position: 0.8; color: "#55ffffff" }
+                        GradientStop { position: 0.2; color: dock.isLight ? "#80ffffff" : "#55ffffff" }
+                        GradientStop { position: 0.5; color: dock.isLight ? "#ffffff" : "#80ffffff" }
+                        GradientStop { position: 0.8; color: dock.isLight ? "#80ffffff" : "#55ffffff" }
                         GradientStop { position: 1.0; color: "transparent" }
                     }
                 }
@@ -800,7 +801,7 @@ PanelWindow {
                     width: isVertical ? Math.round(dock.iconSize * 0.68) : 1
                     height: isVertical ? 1 : Math.round(dock.iconSize * 0.68)
                     radius: 0.5
-                    color: "#28ffffff"
+                    color: dock.isLight ? "#25000000" : "#28ffffff"
                 }
             }
 
@@ -941,11 +942,11 @@ PanelWindow {
                         anchors.fill: parent
                         radius: Math.round(width * 0.22)
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: dock.settingsOpen ? "#454d60" : "#323744" }
-                            GradientStop { position: 1.0; color: dock.settingsOpen ? "#262b35" : "#1c2028" }
+                            GradientStop { position: 0.0; color: dock.settingsOpen ? (dock.isLight ? "#dbeafe" : "#454d60") : (dock.isLight ? "#ffffff" : "#323744") }
+                            GradientStop { position: 1.0; color: dock.settingsOpen ? (dock.isLight ? "#bfdbfe" : "#262b35") : (dock.isLight ? "#f1f5f9" : "#1c2028") }
                         }
                         border.width: 1
-                        border.color: dock.settingsOpen ? "#6088ff" : "#35ffffff"
+                        border.color: dock.settingsOpen ? "#3b82f6" : (dock.isLight ? "#40cbd5e1" : "#35ffffff")
 
                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
@@ -965,7 +966,7 @@ PanelWindow {
                             preferredRendererType: Shape.CurveRenderer
 
                             ShapePath {
-                                fillColor: dock.settingsOpen ? "#60a5fa" : "#e8edf5"
+                                fillColor: dock.settingsOpen ? "#2563eb" : (dock.isLight ? "#475569" : "#e8edf5")
                                 strokeWidth: 0
                                 PathSvg {
                                     path: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
@@ -1156,16 +1157,16 @@ PanelWindow {
         Rectangle {
             anchors.fill: parent
             radius: 8
-            color: Config.tooltipBackground
+            color: dock.isLight ? Qt.rgba(1, 1, 1, 0.92) : Config.tooltipBackground
             border.width: 1
-            border.color: "#30ffffff"
+            border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.12) : "#30ffffff"
         }
 
         Text {
             id: label
             anchors.centerIn: parent
             text: tooltip.text
-            color: Config.tooltipText
+            color: dock.isLight ? "#0f172a" : Config.tooltipText
             font.pixelSize: 12
             font.weight: Font.Medium
         }
@@ -1213,11 +1214,14 @@ PanelWindow {
             visible = false;
         }
 
+        BackgroundEffect.blurRegion: Region { item: trashCard }
+
         Rectangle {
+            id: trashCard
             anchors.fill: parent
             radius: 12
-            color: "#f01c202a"
-            border.color: "#30ffffff"
+            color: dock.isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.85) : "#f01c202a"
+            border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#30ffffff"
             border.width: 1
 
             Column {
@@ -1229,7 +1233,7 @@ PanelWindow {
                     width: parent.width
                     height: 34
                     radius: 8
-                    color: openTrashMouse.containsMouse ? "#20ffffff" : "transparent"
+                    color: openTrashMouse.containsMouse ? (dock.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent"
                     Row {
                         anchors.fill: parent
                         anchors.leftMargin: 10
@@ -1237,7 +1241,7 @@ PanelWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "打开废纸篓"
-                            color: "#ffffff"
+                            color: dock.isLight ? "#0f172a" : "#ffffff"
                             font.pixelSize: 12
                         }
                     }
@@ -1265,7 +1269,7 @@ PanelWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "清空废纸篓"
-                            color: emptyTrashMouse.containsMouse ? "#f87171" : "#e0e0e0"
+                            color: emptyTrashMouse.containsMouse ? "#ef4444" : (dock.isLight ? "#ef4444" : "#e0e0e0")
                             font.pixelSize: 12
                         }
                     }

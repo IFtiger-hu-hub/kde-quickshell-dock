@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Wayland
 import QtQuick
 
 PopupWindow {
@@ -20,12 +21,17 @@ PopupWindow {
     anchor.gravity: anchor.edges
     anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
 
-    implicitWidth: 468 + (panelPosition === "left" || panelPosition === "right" ? 10 : 0)
+    implicitWidth: 500 + (panelPosition === "left" || panelPosition === "right" ? 10 : 0)
     implicitHeight: 610 + (panelPosition === "top" || panelPosition === "bottom" ? 10 : 0)
     color: "transparent"
 
     // Click-through on transparent areas (including the gap between panel and dock)
     mask: Region {
+        item: card
+    }
+
+    // Hardware-accelerated Gaussian Blur behind SettingsPanel via KWin
+    BackgroundEffect.blurRegion: Region {
         item: card
     }
 
@@ -328,37 +334,63 @@ PopupWindow {
                 anchors.right: parent.right
                 anchors.rightMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
+                spacing: 6
 
-                // macOS Preset Button
+                // Light Mode Preset Button
                 Rectangle {
-                    width: 96
+                    width: 86
                     height: 26
                     radius: 6
-                    color: macosHover.containsMouse ? "#30388bfd" : "#18388bfd"
+                    color: lightHover.containsMouse ? "#30f59e0b" : "#18f59e0b"
+                    border.width: 1
+                    border.color: "#50f59e0b"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "☀️ 亮色毛玻璃"
+                        color: "#fbbf24"
+                        font.pixelSize: 11
+                        font.weight: Font.Medium
+                    }
+
+                    MouseArea {
+                        id: lightHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Config.applyLightPreset(Config.perScreenConfig ? root.selectedScreen : null)
+                    }
+                }
+
+                // Dark Mode Preset Button
+                Rectangle {
+                    width: 86
+                    height: 26
+                    radius: 6
+                    color: darkHover.containsMouse ? "#30388bfd" : "#18388bfd"
                     border.width: 1
                     border.color: "#50388bfd"
 
                     Text {
                         anchors.centerIn: parent
-                        text: " macOS 风格"
+                        text: "🌙 暗色毛玻璃"
                         color: "#60a5fa"
                         font.pixelSize: 11
                         font.weight: Font.Medium
                     }
 
                     MouseArea {
-                        id: macosHover
+                        id: darkHover
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: Config.applyMacosPreset(Config.perScreenConfig ? root.selectedScreen : null)
+                        onClicked: Config.applyDarkPreset(Config.perScreenConfig ? root.selectedScreen : null)
                     }
                 }
 
                 // Reset Button
                 Rectangle {
-                    width: 72
+                    width: 68
                     height: 26
                     radius: 6
                     color: resetHover.containsMouse ? "#2bffffff" : "#14ffffff"
@@ -1297,6 +1329,7 @@ PopupWindow {
                             spacing: 8
 
                             readonly property var colors: [
+                                { hex: "#ffffff", name: "亮色毛玻璃" },
                                 { hex: "#20242c", name: "macOS 深灰" },
                                 { hex: "#1c1f26", name: "经典黑" },
                                 { hex: "#161922", name: "深海蓝" },
@@ -1318,7 +1351,18 @@ PopupWindow {
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.setVal("backgroundColor", modelData.hex)
+                                        onClicked: {
+                                            if (modelData.hex === "#ffffff") {
+                                                Config.applyLightPreset(Config.perScreenConfig ? root.selectedScreen : null);
+                                            } else {
+                                                root.setVal("backgroundColor", modelData.hex);
+                                                if (root.getVal("indicatorColor") === "#70334155") {
+                                                    root.setVal("indicatorColor", "#b8ffffff");
+                                                    root.setVal("indicatorActiveColor", "#ffffff");
+                                                    root.setVal("border", "#30ffffff");
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

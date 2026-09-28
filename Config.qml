@@ -139,15 +139,15 @@ Singleton {
         newInstanceSize: 18,
         newInstanceGap: 4,
         newInstanceStroke: 2,
-        backgroundColor: "#20242c",
-        backgroundOpacity: 0.58,
-        border: "#30ffffff",
+        backgroundColor: "#ffffff",
+        backgroundOpacity: 0.52,
+        border: "#60ffffff",
         borderWidth: 1,
         glassHighlight: true,
         shadowEnabled: true,
         showTrash: true,
-        indicatorColor: "#b8ffffff",
-        indicatorActiveColor: "#ffffff"
+        indicatorColor: "#70334155",
+        indicatorActiveColor: "#1e293b"
     })
 
     // ---- Screen Enabled & Geometry ----
@@ -249,6 +249,46 @@ Singleton {
             }
             saveTimer.restart();
         }
+    }
+
+    // Authentic macOS Light Frosted Glass Preset
+    function applyLightPreset(screenName) {
+        const p = {
+            backgroundColor: "#ffffff",
+            backgroundOpacity: 0.52,
+            border: "#60ffffff",
+            borderWidth: 1,
+            glassHighlight: true,
+            shadowEnabled: true,
+            indicatorColor: "#70334155",
+            indicatorActiveColor: "#1e293b"
+        };
+        if (root.perScreenConfig && screenName) {
+            for (const k in p) setScreenVal(screenName, k, p[k]);
+        } else {
+            for (const k in p) setVal(k, p[k]);
+        }
+        saveTimer.restart();
+    }
+
+    // Authentic macOS Dark Frosted Glass Preset
+    function applyDarkPreset(screenName) {
+        const p = {
+            backgroundColor: "#20242c",
+            backgroundOpacity: 0.58,
+            border: "#30ffffff",
+            borderWidth: 1,
+            glassHighlight: true,
+            shadowEnabled: true,
+            indicatorColor: "#b8ffffff",
+            indicatorActiveColor: "#ffffff"
+        };
+        if (root.perScreenConfig && screenName) {
+            for (const k in p) setScreenVal(screenName, k, p[k]);
+        } else {
+            for (const k in p) setVal(k, p[k]);
+        }
+        saveTimer.restart();
     }
 
     // Force apply the authentic macOS Dock preset
