@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
+import QtQuick.Effects
 
 PopupWindow {
     id: root
@@ -74,18 +75,25 @@ PopupWindow {
     grabFocus: true
     onClosed: root.close()
 
-    implicitWidth: card.width + (position === "left" || position === "right" ? 16 : 0)
-    implicitHeight: card.height + (position === "top" || position === "bottom" ? 16 : 0)
+    implicitWidth: card.width + (position === "left" || position === "right" ? 24 : 16)
+    implicitHeight: card.height + (position === "top" || position === "bottom" ? 24 : 16)
 
     color: "transparent"
-
-    mask: Region {
-        item: card
-    }
 
     // Hardware-accelerated Gaussian Blur behind ContextMenu via KWin
     BackgroundEffect.blurRegion: Region {
         item: card
+    }
+
+    // Ambient diffuse drop shadow
+    RectangularShadow {
+        id: cardShadow
+        anchors.fill: card
+        radius: card.radius
+        color: root.isLight ? "#30000000" : "#65000000"
+        blur: 20
+        spread: 0
+        z: -1
     }
 
     readonly property bool isLight: dockRef ? dockRef.isLight : ((0.299 * Config.backgroundColor.r + 0.587 * Config.backgroundColor.g + 0.114 * Config.backgroundColor.b) > 0.5)
@@ -130,7 +138,7 @@ PopupWindow {
         anchors.bottom: position === "top" ? parent.bottom : undefined
         anchors.top: position === "top" ? undefined : parent.top
 
-        color: root.isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.82) : "#f2141824"
+        color: root.isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.92) : "#f2141824"
         radius: 14
         border.color: root.isLight ? Qt.rgba(0, 0, 0, 0.12) : "#28ffffff"
         border.width: 1
