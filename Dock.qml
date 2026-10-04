@@ -330,8 +330,8 @@ PanelWindow {
         || hoveredCell !== null
         || pointerInside
         || launchArea.containsMouse
-        || settingsMouseArea.containsMouse
-        || (showTrash && trashMouseArea.containsMouse)
+        || settingsCell.hovered
+        || (showTrash && trashCell.hovered)
         || interacting
         || dock.settingsOpen
         || contextMenu.visible
@@ -1057,7 +1057,6 @@ PanelWindow {
                     onReleased: {
                         resizing = false;
                         dock.interacting = false;
-                        Config.saveTimer.restart();
                     }
 
                     onCanceled: {
@@ -1072,292 +1071,46 @@ PanelWindow {
                         } else {
                             Config.setVal("iconSize", defSize);
                         }
-                        Config.saveTimer.restart();
                     }
                 }
             }
 
-            // ---- macOS Trash Can Cell ----
-            Item {
+            // ---- Trash Can Cell ----
+            UtilityCell {
                 id: trashCell
+                dock: dock
+                waveSpace: contentRow
                 visible: dock.showTrash
                 x: isVertical ? 0 : (list.width + (list.width > 0 ? dock.separatorTotalWidth : 0))
                 y: isVertical ? (list.height + (list.height > 0 ? dock.separatorTotalWidth : 0)) : 0
-                width: dock.cellSize
-                height: dock.cellSize
-
-                readonly property real cellCenterPos: isVertical
-                    ? (trashCell.y + trashCell.height / 2)
-                    : (trashCell.x + trashCell.width / 2)
-
-                readonly property real waveDistance: Math.abs(dock.pointerPos - cellCenterPos)
-                readonly property real waveInfluence: dock.cellSize * dock.waveSpread
-                readonly property real waveFactor: (dock.pointerInside && waveDistance < waveInfluence && dock.hoverMagnify)
-                    ? 0.5 * (1 + Math.cos(Math.PI * waveDistance / waveInfluence))
-                    : 0
-
-                readonly property real targetScale: 1.0 + waveFactor * (dock.hoverScale - 1.0)
-                readonly property real waveLiftY: isBottom ? -Math.round(waveFactor * 7) : 0
-                readonly property real waveLiftX: isRight ? -Math.round(waveFactor * 7) : 0
-
-                z: Math.round(targetScale * 100)
-
-                Item {
-                    id: trashIconWrapper
-                    width: dock.iconSize
-                    height: dock.iconSize
-                    x: Math.round((parent.width - width) / 2 + trashCell.waveLiftX)
-                    y: Math.round((parent.height - height) / 2 + trashCell.waveLiftY)
-
-                    scale: trashCell.targetScale
-                    transformOrigin: isBottom ? Item.Bottom : isTop ? Item.Top : isLeft ? Item.Left : Item.Right
-
-                    Behavior on scale {
-                        enabled: !dock.pointerInside
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                    }
-
-                    Behavior on y {
-                        enabled: !dock.pointerInside
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                    }
-
-                    // Soft drop shadow under circular plate
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: width / 2
-                        color: "#25000000"
-                        y: 1.5
-                        z: -1
-                        visible: dock.shadowEnabled
-                    }
-
-                    // Unified Circular Icon Base Plate (McMojave / macOS style)
-                    Rectangle {
-                        id: trashCirclePlate
-                        anchors.fill: parent
-                        radius: width / 2
-                        gradient: Gradient {
-                            GradientStop {
-                                position: 0.0
-                                color: trashMouseArea.pressed
-                                    ? "#20252e"
-                                    : (trashMouseArea.containsMouse ? "#475162" : "#374151")
-                            }
-                            GradientStop {
-                                position: 1.0
-                                color: trashMouseArea.pressed
-                                    ? "#13171e"
-                                    : (trashMouseArea.containsMouse ? "#28303d" : "#1f2937")
-                            }
-                        }
-                        border.width: 1
-                        border.color: "#30ffffff"
-
-                        Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                        // 100% Mathematically Centered Vector Trash Can
-                        Item {
-                            id: trashGlyphContainer
-                            anchors.centerIn: parent
-                            width: 24
-                            height: 24
-                            transformOrigin: Item.Center
-                            scale: (parent.width * 0.54 / 24) * (trashMouseArea.pressed ? 0.92 : (trashMouseArea.containsMouse ? 1.06 : 1.0))
-
-                            Behavior on scale {
-                                NumberAnimation { duration: 150; easing.type: Easing.OutBack }
-                            }
-
-                            Shape {
-                                anchors.fill: parent
-                                preferredRendererType: Shape.CurveRenderer
-
-                                ShapePath {
-                                    fillColor: "#f1f5f9"
-                                    strokeWidth: 0
-                                    PathSvg {
-                                        path: "M10 3.2h4c.55 0 1 .45 1 1v1.3H9v-1.3c0-.55.45-1 1-1z M4.5 6.5h15c.55 0 1 .35 1 .8s-.45.8-1 .8h-15c-.55 0-1-.35-1-.8s.45-.8 1-.8z"
-                                    }
-                                }
-
-                                ShapePath {
-                                    fillColor: "#f1f5f9"
-                                    strokeWidth: 0
-                                    PathSvg {
-                                        path: "M6 9.5l1.1 9.8c.11.96.93 1.7 1.9 1.7h6c.97 0 1.79-.74 1.9-1.7l1.1-9.8H6zm3.8 9.5H8.3l-.6-7.8h1.5l.6 7.8zm3 0h-1.6v-7.8h1.6v7.8zm3 0h-1.5l.6-7.8h1.5l-.6 7.8z"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                MouseArea {
-                    id: trashMouseArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-
-                    onPositionChanged: mouse => {
-                        const mapped = trashCell.mapToItem(contentRow, mouse.x, mouse.y);
-                        dock.updatePointer(isVertical ? mapped.y : mapped.x);
-                    }
-
-                    onEntered: {
-                        const mapped = trashCell.mapToItem(contentRow, trashCell.width / 2, trashCell.height / 2);
-                        dock.updatePointer(isVertical ? mapped.y : mapped.x);
-                    }
-
-                    onExited: dock.schedulePointerLeave()
-
-                    onClicked: mouse => {
-                        dock.expandedAppKey = "";
-                        if (mouse.button === Qt.RightButton) {
-                            trashMenu.open();
-                        } else {
-                            RecentFiles.launchCommand(["kioclient", "exec", "trash:/"]);
-                        }
-                    }
+                glyphPaths: [
+                    "M10 3.2h4c.55 0 1 .45 1 1v1.3H9v-1.3c0-.55.45-1 1-1z M4.5 6.5h15c.55 0 1 .35 1 .8s-.45.8-1 .8h-15c-.55 0-1-.35-1-.8s.45-.8 1-.8z",
+                    "M6 9.5l1.1 9.8c.11.96.93 1.7 1.9 1.7h6c.97 0 1.79-.74 1.9-1.7l1.1-9.8H6zm3.8 9.5H8.3l-.6-7.8h1.5l.6 7.8zm3 0h-1.6v-7.8h1.6v7.8zm3 0h-1.5l.6-7.8h1.5l-.6 7.8z"
+                ]
+                onClicked: button => {
+                    dock.expandedAppKey = "";
+                    if (button === Qt.RightButton) trashMenu.open();
+                    else Trash.open();
                 }
             }
 
             // ---- Settings / Control Center Cell ----
-            Item {
+            UtilityCell {
                 id: settingsCell
+                dock: dock
+                waveSpace: contentRow
                 x: isVertical ? 0 : (list.width + (list.width > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0))
                 y: isVertical ? (list.height + (list.height > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0)) : 0
-                width: dock.cellSize
-                height: dock.cellSize
-
-                readonly property real cellCenterPos: isVertical
-                    ? (settingsCell.y + settingsCell.height / 2)
-                    : (settingsCell.x + settingsCell.width / 2)
-
-                readonly property real waveDistance: Math.abs(dock.pointerPos - cellCenterPos)
-                readonly property real waveInfluence: dock.cellSize * dock.waveSpread
-                readonly property real waveFactor: (dock.pointerInside && waveDistance < waveInfluence && dock.hoverMagnify)
-                    ? 0.5 * (1 + Math.cos(Math.PI * waveDistance / waveInfluence))
-                    : 0
-
-                readonly property real targetScale: 1.0 + waveFactor * (dock.hoverScale - 1.0)
-                readonly property real waveLiftY: isBottom ? -Math.round(waveFactor * 7) : 0
-                readonly property real waveLiftX: isRight ? -Math.round(waveFactor * 7) : 0
-
-                z: Math.round(targetScale * 100)
-
-                Item {
-                    id: settingsIconContainer
-                    width: dock.iconSize
-                    height: dock.iconSize
-                    x: Math.round((parent.width - width) / 2 + settingsCell.waveLiftX)
-                    y: Math.round((parent.height - height) / 2 + settingsCell.waveLiftY)
-
-                    scale: settingsCell.targetScale
-                    transformOrigin: isBottom ? Item.Bottom : isTop ? Item.Top : isLeft ? Item.Left : Item.Right
-
-                    Behavior on scale {
-                        enabled: !dock.pointerInside
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                    }
-
-                    Behavior on y {
-                        enabled: !dock.pointerInside
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                    }
-
-                    // Soft drop shadow under circular plate
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: width / 2
-                        color: "#25000000"
-                        y: 1.5
-                        z: -1
-                        visible: dock.shadowEnabled
-                    }
-
-                    // Unified Circular Icon Base Plate (McMojave / macOS style)
-                    Rectangle {
-                        id: settingsCirclePlate
-                        anchors.fill: parent
-                        radius: width / 2
-                        gradient: Gradient {
-                            GradientStop {
-                                position: 0.0
-                                color: dock.settingsOpen
-                                    ? "#2563eb"
-                                    : (settingsMouseArea.pressed
-                                        ? "#20252e"
-                                        : (settingsMouseArea.containsMouse ? "#475162" : "#374151"))
-                            }
-                            GradientStop {
-                                position: 1.0
-                                color: dock.settingsOpen
-                                    ? "#1d4ed8"
-                                    : (settingsMouseArea.pressed
-                                        ? "#13171e"
-                                        : (settingsMouseArea.containsMouse ? "#28303d" : "#1f2937"))
-                            }
-                        }
-                        border.width: 1
-                        border.color: dock.settingsOpen ? "#60a5fa" : "#30ffffff"
-
-                        Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                        // 100% Mathematically Centered Vector Gear
-                        Item {
-                            id: gearContainer
-                            anchors.centerIn: parent
-                            width: 24
-                            height: 24
-                            transformOrigin: Item.Center
-                            scale: (parent.width * 0.54 / 24) * (settingsMouseArea.pressed ? 0.92 : 1.0)
-                            rotation: dock.settingsOpen ? 45 : (settingsMouseArea.containsMouse ? 20 : 0)
-
-                            Behavior on rotation {
-                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                            }
-                            Behavior on scale {
-                                NumberAnimation { duration: 150; easing.type: Easing.OutBack }
-                            }
-
-                            Shape {
-                                anchors.fill: parent
-                                preferredRendererType: Shape.CurveRenderer
-
-                                ShapePath {
-                                    fillColor: dock.settingsOpen ? "#ffffff" : "#f1f5f9"
-                                    strokeWidth: 0
-                                    PathSvg {
-                                        path: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                MouseArea {
-                    id: settingsMouseArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-
-                    onPositionChanged: mouse => {
-                        const mapped = settingsCell.mapToItem(contentRow, mouse.x, mouse.y);
-                        dock.updatePointer(isVertical ? mapped.y : mapped.x);
-                    }
-
-                    onEntered: {
-                        const mapped = settingsCell.mapToItem(contentRow, settingsCell.width / 2, settingsCell.height / 2);
-                        dock.updatePointer(isVertical ? mapped.y : mapped.x);
-                    }
-
-                    onExited: dock.schedulePointerLeave()
-
-                    onClicked: {
-                        dock.expandedAppKey = "";
-                        dock.settingsOpen = !dock.settingsOpen;
-                    }
+                active: dock.settingsOpen
+                hoverRotation: 20
+                activeRotation: 45
+                glyphPaths: [
+                    "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
+                ]
+                onClicked: button => {
+                    if (button !== Qt.LeftButton) return;
+                    dock.expandedAppKey = "";
+                    dock.settingsOpen = !dock.settingsOpen;
                 }
             }
         }
@@ -1451,8 +1204,8 @@ PanelWindow {
 
         readonly property var targetAnchor: launchArea.containsMouse
             ? dock.launchCell
-            : ((dock.showTrash && trashMouseArea.containsMouse) ? trashCell
-            : (settingsMouseArea.containsMouse ? settingsCell
+            : ((dock.showTrash && trashCell.hovered) ? trashCell
+            : (settingsCell.hovered ? settingsCell
             : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing) ? separatorItem
             : dock.hoveredCell)))
 
@@ -1461,8 +1214,8 @@ PanelWindow {
 
         readonly property string targetText: !targetAnchor ? ""
             : launchArea.containsMouse ? Config.newInstanceLabel
-            : ((dock.showTrash && trashMouseArea.containsMouse) ? "废纸篓"
-            : (settingsMouseArea.containsMouse ? "Dock 设置"
+            : ((dock.showTrash && trashCell.hovered) ? "废纸篓"
+            : (settingsCell.hovered ? "Dock 设置"
             : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing) ? ("拖拽调整大小 · " + dock.iconSize + " px")
             : (targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || "")))))
 
@@ -1554,101 +1307,9 @@ PanelWindow {
         visible: false
     }
 
-    // Context Menu for Trash Can
-    PopupWindow {
+    TrashMenu {
         id: trashMenu
+        dock: dock
         anchor.item: trashCell
-        anchor.edges: dock.dockPosition === "top" ? Edges.Bottom
-                    : dock.dockPosition === "left" ? Edges.Right
-                    : dock.dockPosition === "right" ? Edges.Left
-                    : Edges.Top
-        anchor.gravity: anchor.edges
-        anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
-
-        implicitWidth: 170
-        implicitHeight: 88
-        color: "transparent"
-        visible: false
-
-        function open() {
-            visible = true;
-        }
-
-        function close() {
-            visible = false;
-        }
-
-        BackgroundEffect.blurRegion: Region { item: trashCard }
-
-        Rectangle {
-            id: trashCard
-            anchors.fill: parent
-            radius: 12
-            color: dock.isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.85) : "#f01c202a"
-            border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#30ffffff"
-            border.width: 1
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: 6
-                spacing: 4
-
-                Rectangle {
-                    width: parent.width
-                    height: 34
-                    radius: 8
-                    color: openTrashMouse.containsMouse ? (dock.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent"
-                    Row {
-                        anchors.fill: parent
-                        anchors.leftMargin: 10
-                        spacing: 8
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "打开废纸篓"
-                            color: dock.isLight ? "#0f172a" : "#ffffff"
-                            font.pixelSize: 12
-                        }
-                    }
-                    MouseArea {
-                        id: openTrashMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            trashMenu.close();
-                            RecentFiles.launchCommand(["kioclient", "exec", "trash:/"]);
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: parent.width
-                    height: 34
-                    radius: 8
-                    color: emptyTrashMouse.containsMouse ? "#25ef4444" : "transparent"
-                    Row {
-                        anchors.fill: parent
-                        anchors.leftMargin: 10
-                        spacing: 8
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "清空废纸篓"
-                            color: emptyTrashMouse.containsMouse ? "#ef4444" : (dock.isLight ? "#ef4444" : "#e0e0e0")
-                            font.pixelSize: 12
-                        }
-                    }
-                    MouseArea {
-                        id: emptyTrashMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            trashMenu.close();
-                            RecentFiles.launchCommand(["sh", "-c", "rm -rf ~/.local/share/Trash/files/* ~/.local/share/Trash/info/*"]);
-                        }
-                    }
-                }
-            }
-        }
     }
 }
