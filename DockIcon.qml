@@ -26,6 +26,7 @@ Item {
     property bool hovered: false
     property bool pressed: false
     property bool dragging: false
+    property bool isExpanded: false
 
     // How many windows this app has open, and whether one of them has focus.
     property int windows: 0
@@ -208,6 +209,24 @@ Item {
             NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
 
+        // Expanded State: Soft subtle circular ambient aura (clean, no harsh boxy borders)
+        Rectangle {
+            id: expandedAura
+            anchors.centerIn: parent
+            width: parent.width + 8
+            height: parent.height + 8
+            radius: width / 2
+            visible: root.isExpanded
+            z: -1
+            opacity: root.hovered ? 1.0 : 0.65
+
+            color: (root.d && root.d.isLight) ? Qt.rgba(0.01, 0.52, 0.78, 0.14) : Qt.rgba(0.23, 0.51, 0.96, 0.22)
+            border.color: (root.d && root.d.isLight) ? Qt.rgba(2, 132, 199, 0.45) : Qt.rgba(96, 165, 250, 0.55)
+            border.width: 1.2
+
+            Behavior on opacity { NumberAnimation { duration: 150 } }
+        }
+
         Image {
             id: icon
             anchors.fill: parent
@@ -260,7 +279,7 @@ Item {
         anchors.leftMargin: root.dockPosition === "left" ? 2 : 0
         anchors.rightMargin: root.dockPosition === "right" ? 2 : 0
 
-        width: 14
+        width: root.isExpanded ? 20 : 14
         height: 14
 
         visible: opacity > 0
@@ -268,30 +287,39 @@ Item {
         Behavior on opacity {
             NumberAnimation { duration: 160 }
         }
+        Behavior on width {
+            NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+        }
 
-        // Ambient glow behind active dot
+        // Ambient glow behind active dot / capsule
         Rectangle {
             anchors.centerIn: parent
-            width: dot.width + 4
-            height: width
+            width: dot.width + (root.isExpanded ? 6 : 4)
+            height: dot.height + (root.isExpanded ? 6 : 4)
             radius: width / 2
-            color: root.active ? "#40ffffff" : "transparent"
+            color: root.isExpanded
+                ? (root.d && root.d.isLight ? Qt.rgba(2, 132, 199, 0.25) : Qt.rgba(96, 165, 250, 0.35))
+                : (root.active ? "#40ffffff" : "transparent")
             Behavior on color { ColorAnimation { duration: 150 } }
         }
 
-        // Running Dot (Pulses softly while launching)
+        // Running Dot / Expanded Indicator Capsule
         Rectangle {
             id: dot
             anchors.centerIn: parent
-            width: root.active ? root.indicatorActiveDotSize : root.indicatorDotSize
-            height: width
-            radius: width / 2
+            width: root.isExpanded ? 16 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
+            height: root.isExpanded ? 3.5 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
+            radius: root.isExpanded ? 2 : (width / 2)
 
-            color: root.launching ? "#ffffff"
-                 : root.active ? root.indicatorActiveColor
-                 : root.indicatorColor
+            color: root.isExpanded
+                ? (root.d && root.d.isLight ? "#0284c7" : "#60a5fa")
+                : (root.launching ? "#ffffff"
+                    : root.active ? root.indicatorActiveColor
+                    : root.indicatorColor)
 
-            Behavior on width { NumberAnimation { duration: 140 } }
+            Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            Behavior on radius { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: 140 } }
 
             SequentialAnimation on opacity {

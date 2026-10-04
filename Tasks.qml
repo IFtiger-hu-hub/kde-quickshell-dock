@@ -107,6 +107,64 @@ Singleton {
         return null;
     }
 
+    // Returns array of individual windows: [{ modelIndex, title, active, minimized, icon }]
+    function getWindows(key) {
+        if (!key) return [];
+        const cleanKey = root.key(key);
+        const rec = root.info(cleanKey);
+        if (!rec) return [];
+
+        const list = [];
+        const rows = rec.rows || [rec.row];
+
+        for (let r = 0; r < rows.length; r++) {
+            const rowIndex = rows[r];
+            const row = tasks.index(rowIndex, 0);
+            if (!row || !row.valid) continue;
+
+            const isGroup = tasks.data(row, root.roleIsGroupParent);
+            if (isGroup) {
+                const count = tasks.rowCount(row);
+                for (let i = 0; i < count; i++) {
+                    const child = tasks.index(i, 0, row);
+                    if (!child || !child.valid) continue;
+                    const winTitle = tasks.data(child, Qt.DisplayRole) || tasks.data(child, root.roleAppName) || (rec.name ? (rec.name + " " + (i + 1)) : "");
+                    list.push({
+                        modelIndex: child,
+                        title: winTitle || (rec.name ? (rec.name + " (" + (i + 1) + ")") : "窗口"),
+                        active: tasks.data(child, root.roleIsActive) === true,
+                        minimized: tasks.data(child, root.roleIsMinimized) === true,
+                        icon: tasks.data(child, root.roleIcon) || rec.icon || ""
+                    });
+                }
+            } else {
+                list.push({
+                    modelIndex: row,
+                    title: tasks.data(row, Qt.DisplayRole) || rec.name || cleanKey,
+                    active: tasks.data(row, root.roleIsActive) === true,
+                    minimized: tasks.data(row, root.roleIsMinimized) === true,
+                    icon: tasks.data(row, root.roleIcon) || rec.icon || ""
+                });
+            }
+        }
+        return list;
+    }
+
+    function activateWindow(modelIndex) {
+        return root.raise(modelIndex);
+    }
+
+    function closeWindow(modelIndex) {
+        if (!modelIndex || !modelIndex.valid) return false;
+        try {
+            tasks.requestClose(modelIndex);
+            return true;
+        } catch (e) {
+            console.warn("Tasks: requestClose failed:", e);
+            return false;
+        }
+    }
+
     // ---- actions ----------------------------------------------------------
 
     // Raises the app's windows. When it owns several, each call steps to the
@@ -250,6 +308,7 @@ Singleton {
             if (!rec) {
                 rec = {
                     row: i,
+                    rows: [i],
                     windows: 0,
                     active: false,
                     launcherUrl: launcherUrl,
@@ -258,6 +317,8 @@ Singleton {
                     icon: iconVal || key
                 };
                 apps[key] = rec;
+            } else {
+                if (rec.rows.indexOf(i) < 0) rec.rows.push(i);
             }
             rec.windows += windows;
             rec.active = rec.active || tasks.data(row, root.roleIsActive) === true;
