@@ -1,7 +1,8 @@
 # kde-quickshell-dock
 
-A Quickshell dock that shows your Plasma favourites and lets you drag them into
-whatever order you like.
+A Quickshell dock for KDE Plasma 6 (Wayland) in the style of the macOS Dock:
+your Plasma favourites plus whatever is running, with parabolic hover
+magnification, frosted glass and drag-to-reorder.
 
 ![the dock](docs/dock.png)
 
@@ -17,91 +18,109 @@ whatever order you like.
   broken icon.
 - **Drag to reorder.** Neighbours slide aside as you drag; the order is saved and
   restored on next launch.
+- **macOS-style look and motion**: cosine-wave hover magnification across
+  neighbouring icons, bounce on launch, frosted glass plate with a specular top
+  edge, light and dark presets, and any of the four screen edges.
+- **Knows what's running**: a dot under each running app, click to raise (or
+  minimize the focused single window), unpinned running apps shown too, and the
+  icon's geometry is published to KWin for the Magic Lamp minimize effect (see
+  [Running applications](#running-applications)).
+- **Multi-window apps expand inline**: clicking an app with several windows
+  opens a row of window cards beside it — app icon, cleaned-up window title,
+  focus/minimized state, and a close button. When the dock gets wider than the
+  screen it scrolls horizontally with the wheel or touchpad.
+- **Right-click menu** per app: recent files for that app, its desktop actions,
+  new window, pin / unpin from Kickoff favourites.
+- **Trash** cell: click to open, right-click to empty — with a confirmation that
+  shows the item count, done through KIO (see [Trash](#trash)).
+- **Settings panel** behind the gear cell for every option below, with optional
+  **per-screen** configuration; drag the separator line to resize the icons.
 - **Auto-hide** that never disappears completely — the dock slides down to a
   thin sliver at the screen edge and comes back when the pointer touches it.
-- Click to launch, hover for the application name.
-- **Knows what's running**: running apps carry a corner badge with a dot per
-  open window, clicking one raises its windows instead of starting a second
-  copy, and a **+** button above the icon opens another window when you do want
-  one (see [Running applications](#running-applications)).
 - Picks up favourite changes live — favourite something in Kickoff and it
   appears without a restart.
 - Resolves icons through a fallback chain, so absolute-path and
   oddly-named icons still render (see [Icons](#icons)).
-- Drawn as a single stroked path, so it blends into the screen edge with
-  inverted corners (see [The dock outline](#the-dock-outline)).
+- With `edgeCorners`, drawn as a single stroked path that blends into the screen
+  edge with inverted corners (see [The dock outline](#the-dock-outline)).
 
 ## Requirements
 
-- Quickshell (developed against 0.3.1)
+- Quickshell (developed against 0.3.1; also runs on the noctalia-qs fork)
 - A compositor supporting `wlr-layer-shell` (KWin on Plasma 6 does)
 - Plasma's `org.kde.taskmanager` QML module, from `plasma-workspace`, for the
   running-application features
 - One extra install step to let KWin tell the dock what's running — see
   [Running applications](#running-applications). Without it everything else
   still works; the dock just behaves as a plain launcher.
+- Optional helpers, each degrading gracefully when absent: `ktrash6` or `gio`
+  and `kioclient` (trash), `sqlite3` or `python3` (Kickoff favourites),
+  `python3` (recent files), `gdbus` (live favourite updates, pin/unpin).
 
-## Running
+## Installing
+
+```sh
+./scripts/install.sh
+```
+
+This checks the dependencies above, installs the KWin permission file (see
+[The KWin permission](#the-kwin-permission)) with `Exec=` pointing at your real
+quickshell binary, adds an autostart entry, and (re)starts the dock. Everything
+goes under `$HOME`; the dock runs straight from this checkout, so `git pull` is
+the update.
+
+| Command | Effect |
+| --- | --- |
+| `./scripts/install.sh` | Install and start, with autostart |
+| `./scripts/install.sh --no-autostart` | Same, without the autostart entry |
+| `./scripts/install.sh check` | Only report missing dependencies |
+| `./scripts/install.sh uninstall` | Stop the dock, remove the permission and autostart files (settings are kept) |
+
+If the running-app dots don't show up right after installing, log out and back
+in once — KWin only consults the permission file for clients it sees start
+afterwards.
+
+To run it by hand instead, e.g. while developing:
 
 ```sh
 qs -p ./shell.qml
 ```
 
-For the running-application features, also install the permission file once:
-
-```sh
-install -Dm644 org.quickshell.dock.desktop \
-  ~/.local/share/applications/org.quickshell.dock.desktop
-kbuildsycoca6
-```
-
-To autostart it with your session:
-
-```sh
-mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/quickshell-dock.desktop <<EOF
-[Desktop Entry]
-Type=Application
-Name=Quickshell Dock
-Exec=qs -p $PWD/shell.qml
-EOF
-```
-
-(`X-KDE-Wayland-Interfaces` does nothing in an autostart file — KWin only reads
-it from the installed-applications index. See
-[The KWin permission](#the-kwin-permission).)
+[`scripts/dock-switch.sh`](scripts/dock-switch.sh) switches between this dock
+and a native Plasma floating panel; see [DOCK_SCHEMES.md](DOCK_SCHEMES.md).
 
 ## Configuration
 
-Everything tunable lives in [Config.qml](Config.qml) — sizes, colours, hover
-magnification, and:
+Click the **gear** cell at the end of the dock for the settings panel. Changes
+apply immediately and are saved to Quickshell's state directory
+(`dock-config.json`); with **per-screen** configuration on, each monitor keeps
+its own copy. Defaults live in [Config.qml](Config.qml). The most useful knobs:
 
 | Property | Meaning |
 | --- | --- |
+| `position` | `bottom`, `top`, `left` or `right` |
+| `screenMode` / `targetScreen` | Dock on `all` screens, the `primary` one, or a `custom` named one |
+| `iconSize` | Icon size; also adjustable by dragging the separator line (double-click resets) |
 | `source` | `"kickoff"` for launcher favourites, `"taskmanager"` for the task manager's pinned launchers |
+| `showRunningApps` | Also show running apps that aren't pinned |
 | `autoHide` | Slide away when unused, leaving `peekHeight` px showing |
-| `peekHeight` | How much of the dock stays visible while hidden |
-| `peekOpacity` | How solid that sliver is; the dock fades to this as it slides away |
+| `peekHeight` / `peekOpacity` | How much of the dock stays visible while hidden, and how solid |
 | `triggerHeight` | Invisible pointer-catching strip along the screen edge |
 | `hideDelay` | How long the pointer must be away before it hides |
-| `edgeCorners` | Inverted corners flaring the dock into the screen edge |
-| `border` / `borderWidth` | Hairline traced around the whole outline, fillets included |
-| `cornerSize` | Radius of those corners |
-| `peekFilletShare` | Height split between rounded corner and flare while peeking; lower = rounder |
-| `backgroundColor` / `backgroundOpacity` | Dock background tint and translucency, kept separate from hex alpha |
 | `reserveSpace` | `true` makes windows avoid the dock; `false` floats it on top |
-| `hoverMagnify` | macOS-style icon zoom on hover |
+| `hoverMagnify` / `hoverScale` / `waveSpread` | Hover zoom on/off, peak scale, and how many neighbours the wave reaches |
+| `bounceOnLaunch` | Bounce the icon until the app's window appears |
 | `raiseRunning` | Clicking a running app raises its windows instead of launching another copy |
-| `runningIndicator` | Draw the corner badge on running apps |
-| `indicatorMaxDots` | Cap on the dots, so a browser with ten windows can't run the badge across the icon |
-| `indicatorInsetX` / `indicatorInsetY` | Badge distance from the icon's corner, per axis; negative overhangs |
-| `indicatorPadding` | Padding between the dots and the edge of their backing |
-| `indicatorColor` / `indicatorActiveColor` | Dot colour, and the accent used for the focused app |
-| `indicatorBackground` | The badge's backing; `"transparent"` gives bare dots |
-| `newInstanceButton` | Show the **+** button above a running app's icon |
-| `newInstanceSize` / `newInstanceGap` | Button diameter, and its distance from the dock plate |
+| `minimizeActive` | Clicking the focused app's only window minimizes it |
+| `runningIndicator` | Draw the running dot under the icon |
+| `indicatorColor` / `indicatorActiveColor` | Dot colour, and the colour used for the focused app |
+| `newInstanceButton` | Show a **+** button above a running app's icon (off by default) |
+| `backgroundColor` / `backgroundOpacity` | Plate tint and translucency, kept separate from hex alpha |
+| `border` / `borderWidth` / `glassHighlight` / `shadowEnabled` | Plate outline, specular top edge, drop shadow |
+| `edgeCorners` / `cornerSize` | Inverted corners flaring the dock into the screen edge |
+| `showTrash` | Show the Trash cell |
 
-Quickshell hot-reloads on save, so edits apply immediately.
+Quickshell hot-reloads on save, so edits to the QML apply immediately.
 
 ## Auto-hide
 
@@ -136,25 +155,34 @@ a momentary "nothing hovered" is ignored rather than starting the hide timer.
 
 ## Running applications
 
-Three things hang off knowing what's open: the badge in an icon's top-left
-corner (one dot per window, capped at `indicatorMaxDots`, accent-coloured while
-that app has focus), click-to-raise, and the **+** button.
+What hangs off knowing what's open: the running dot under each icon (larger and
+in `indicatorActiveColor` while the app has focus), click-to-raise, the window
+cards for multi-window apps, and the optional **+** button.
 
-The badge sits **on** the icon rather than in a strip of its own, so switching
-it on doesn't change the dock's size. That does mean it lands on artwork of any
-colour, which is why it carries its own dark backing — pale dots vanish outright
-on a white icon. `indicatorBackground: "transparent"` gives bare dots back if
-your icons are uniform enough to take them.
-
-**Clicking a running app raises it** rather than starting a second copy. When it
-owns several windows each click steps to the next one, so repeated clicks cycle
-the group instead of arguing over which single window counts as "the" window. A
+**Clicking a running app raises it** rather than starting a second copy. A
 minimized window is unminimized first — `requestActivate` on its own leaves it
-minimized.
+minimized. With `minimizeActive`, clicking an app whose only window already has
+focus minimizes it instead, like a taskbar.
 
-That leaves no way to *deliberately* open another window, which is what the **+**
-button above the icon is for. It appears on hover over a running app and calls
-`requestNewInstance`, which runs the launcher afresh.
+**An app with several windows expands** instead of guessing which one you
+meant: its windows open as cards to the right of the icon (below it on a
+vertical dock). Each card shows the app icon over a blurred backdrop of the
+same artwork, the app name with a focused / minimized marker, and the window
+title with the app-name suffix stripped — `proj - Antigravity IDE - file.qml`
+becomes `file.qml (proj)`. Click a card to raise that window, or hover it for a
+close button. While expanded, the icon's dot turns into a short bar and its
+hover zoom is damped so it doesn't collide with the first card. Click the icon
+again to collapse.
+
+If the expanded dock would be wider than about 88% of the screen it stops
+growing and scrolls instead: the mouse wheel or a touchpad swipe pans the icons,
+faded edges hint at what's off-screen, and the Trash and Settings cells stay
+pinned to the end.
+
+The **+** button (`newInstanceButton`, off by default) is the way to
+*deliberately* open another window. It appears on hover over a running app and
+calls `requestNewInstance`, which runs the launcher afresh. The right-click menu
+has the same action as “新建窗口”.
 
 ### Why not `ToplevelManager`
 
@@ -341,21 +369,43 @@ On startup the two are merged: remembered positions first, then anything newly
 favourited appended to the end. Un-favouriting an app drops it from the dock,
 and its remembered position is discarded.
 
+## Trash
+
+Click the Trash cell to open `trash:/` in the file manager; right-click for
+**打开废纸篓** / **清空废纸篓…**. Emptying asks first, showing how many items
+will go, and the entry is greyed out when the trash is already empty.
+
+The work goes through KIO rather than the filesystem. The trash isn't only
+`~/.local/share/Trash`: every mounted volume can carry its own `.Trash-$UID`,
+and KIO keeps a `directorysizes` cache next to them. Deleting `files/` and
+`info/` by hand misses the external volumes and leaves that cache stale, so
+[Trash.qml](Trash.qml) empties with `ktrash6 --empty` (falling back to
+`gio trash --empty`) and counts items with `kioclient ls trash:/`.
+
 ## Layout
 
 | File | Role |
 | --- | --- |
 | [shell.qml](shell.qml) | Entry point; one dock per screen |
-| [Dock.qml](Dock.qml) | The panel: layer-shell window, list, drag-reorder wiring, auto-hide, tooltip |
-| [DockIcon.qml](DockIcon.qml) | One cell's visuals — highlight, icon, hover zoom, running dots |
-| [Tasks.qml](Tasks.qml) | What's running, via Plasma's libtaskmanager; raise and new-instance |
+| [Dock.qml](Dock.qml) | The panel: layer-shell window, list, drag-reorder wiring, wave engine, auto-hide, overflow scrolling, tooltip |
+| [DockIcon.qml](DockIcon.qml) | One app cell's visuals — icon, hover zoom, launch bounce, running dot |
+| [WindowCard.qml](WindowCard.qml) | One window card in an expanded multi-window app |
+| [UtilityCell.qml](UtilityCell.qml) | The circular-plate Trash and Settings cells |
+| [TrashMenu.qml](TrashMenu.qml) | Trash right-click menu with the empty confirmation |
+| [ContextMenu.qml](ContextMenu.qml) | Per-app right-click menu: recent files, actions, pin/unpin |
+| [SettingsPanel.qml](SettingsPanel.qml) | The settings popup behind the gear cell |
+| [Tasks.qml](Tasks.qml) | What's running, via Plasma's libtaskmanager; raise, minimize, close, new instance, window list |
+| [Trash.qml](Trash.qml) | Trash item count, open and empty, through KIO |
+| [RecentFiles.qml](RecentFiles.qml) / [recent_files.py](recent_files.py) | Recent files per app from the KActivities database; also the generic command launcher |
 | [org.quickshell.dock.desktop](org.quickshell.dock.desktop) | Asks KWin for the restricted window-management interface |
 | [IconResolver.qml](IconResolver.qml) | Builds the icon fallback chain |
 | [PlasmaFavorites.qml](PlasmaFavorites.qml) | Picks the favourites source and resolves entries |
 | [KAstatsFavorites.qml](KAstatsFavorites.qml) | Reads favourites from the KActivities database |
 | [DockOrder.qml](DockOrder.qml) | Persists and merges the drag order |
 | [Ini.qml](Ini.qml) | Small KConfig/INI reader |
-| [Config.qml](Config.qml) | All the knobs |
+| [Config.qml](Config.qml) | Defaults, per-screen overrides and persistence for every setting |
+| [scripts/install.sh](scripts/install.sh) | Install / uninstall / dependency check |
+| [scripts/dock-switch.sh](scripts/dock-switch.sh) | Switch between this dock and a native Plasma panel |
 
 ## Notes
 
@@ -372,3 +422,12 @@ and its remembered position is discarded.
   `applications:`, strip any path, drop `.desktop`, lowercase). The lowercasing
   earns its keep on Chrome web apps, which Plasma lists as
   `chrome-…-Default.desktop` but reports running as `chrome-…-default`.
+- **Memory.** Expect roughly 250–300 MB RSS, of which about half is shared Qt
+  and KDE Frameworks libraries also mapped by plasmashell; the dock's private
+  memory (`RssAnon`) is around 125–135 MB fresh. An empty Quickshell window
+  alone is about 60 MB private, and the rest is mostly fixed cost from the
+  libtaskmanager / KF6 stack and the QML engine. Ablation tests found no single
+  visual element worth more than a few MB, the number of screens barely matters,
+  and `MALLOC_ARENA_MAX` / `QSG_RENDER_LOOP=basic` made no measurable
+  difference. Private memory does creep up over a long session with many hot
+  reloads, so restart the dock after heavy QML editing.
