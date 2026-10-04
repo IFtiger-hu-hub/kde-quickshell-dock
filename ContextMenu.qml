@@ -429,7 +429,12 @@ PopupWindow {
                                 width: 16
                                 height: 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                source: modelData.icon || "image://icon/application-x-executable"
+                                // Desktop actions give theme names ("window-new"); a bare name
+                                // would be loaded as a relative file, so route it via the icon provider.
+                                source: {
+                                    const ic = modelData.icon || "application-x-executable";
+                                    return (ic.startsWith("/") || ic.indexOf("://") >= 0) ? ic : ("image://icon/" + ic);
+                                }
                                 sourceSize.width: 16
                                 sourceSize.height: 16
                             }

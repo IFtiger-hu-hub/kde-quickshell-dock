@@ -23,7 +23,16 @@ BOLD="\033[1m"
 RESET="\033[0m"
 
 is_qs_running() {
-    pgrep -x qs >/dev/null 2>&1
+    # Scoped to this config: other Quickshell shells don't count as "the dock".
+    qs list -p "$SHELL_QML" 2>/dev/null | grep -q "Process ID"
+}
+
+dock_pid() {
+    qs list -p "$SHELL_QML" 2>/dev/null | awk '/Process ID/{print $3; exit}'
+}
+
+stop_dock() {
+    qs kill -p "$SHELL_QML" >/dev/null 2>&1 || true
 }
 
 has_native_bottom_panel() {
@@ -54,7 +63,7 @@ show_status() {
 
     if is_qs_running; then
         local pid
-        pid=$(pgrep -x qs | head -n 1)
+        pid=$(dock_pid)
         local mem
         mem=$(ps -p "$pid" -o rss= 2>/dev/null || echo "0")
         local mem_mb=$((mem / 1024))
@@ -92,7 +101,7 @@ use_quickshell() {
 
     # 2. 启动 / 重启 Quickshell 守护进程
     echo -e " -> 正在启动 Quickshell macOS Dock 进程..."
-    pkill -x qs >/dev/null 2>&1 || true
+    stop_dock
     sleep 0.4
     qs -d -p "$SHELL_QML"
     sleep 0.8
@@ -112,7 +121,7 @@ use_native() {
     # 1. 停止 Quickshell
     if is_qs_running; then
         echo -e " -> 正在停止 Quickshell 守护进程..."
-        pkill -x qs >/dev/null 2>&1 || true
+        stop_dock
         sleep 0.3
     fi
 
