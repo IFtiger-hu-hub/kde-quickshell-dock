@@ -17,11 +17,14 @@ PopupWindow {
     anchor.gravity: anchor.edges
     anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
 
+    grabFocus: true
+    onClosed: root.close()
+
     property bool confirming: false
     readonly property bool isLight: dock.isLight
 
-    implicitWidth: confirming ? 220 : 170
-    implicitHeight: card.implicitHeight
+    implicitWidth: card.width
+    implicitHeight: card.height
     color: "transparent"
     visible: false
 
@@ -36,7 +39,7 @@ PopupWindow {
         confirming = false;
     }
 
-    BackgroundEffect.blurRegion: Region { item: card }
+    BackgroundEffect.blurRegion: Region { item: card; radius: card.radius }
 
     // Escape cancels the confirmation first, then closes.
     Item {
@@ -50,11 +53,11 @@ PopupWindow {
 
     Rectangle {
         id: card
-        anchors.fill: parent
-        implicitHeight: root.confirming ? (confirmCol.implicitHeight + 20) : (menuCol.implicitHeight + 12)
-        radius: 12
-        color: root.isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.85) : "#f01c202a"
-        border.color: root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#30ffffff"
+        width: 200
+        height: root.confirming ? (confirmCol.implicitHeight + 20) : (menuCol.implicitHeight + 12)
+        radius: 10
+        color: Theme.surface(root.isLight)
+        border.color: Theme.surfaceBorder(root.isLight)
         border.width: 1
 
         // ---- normal menu ----
@@ -77,7 +80,6 @@ PopupWindow {
 
             MenuRow {
                 text: Trash.empty ? "废纸篓是空的" : "清空废纸篓…"
-                destructive: !Trash.empty
                 enabled: !Trash.empty && !Trash.busy
                 onActivated: root.confirming = true
             }
@@ -97,7 +99,7 @@ PopupWindow {
                 width: parent.width
                 text: "确定要永久删除废纸篓中的项目吗？"
                 wrapMode: Text.WordWrap
-                color: root.isLight ? "#0f172a" : "#ffffff"
+                color: Theme.textPrimary(root.isLight)
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
             }
@@ -106,7 +108,7 @@ PopupWindow {
                 width: parent.width
                 text: (Trash.count > 0 ? ("共 " + Trash.count + " 个项目，") : "") + "此操作无法撤销。"
                 wrapMode: Text.WordWrap
-                color: root.isLight ? "#475569" : "#94a3b8"
+                color: Theme.textSecondary(root.isLight)
                 font.pixelSize: 11
             }
 
@@ -133,24 +135,24 @@ PopupWindow {
     component MenuRow: Rectangle {
         id: row
         property string text
-        property bool destructive: false
         signal activated()
 
+        readonly property bool highlighted: rowMouse.containsMouse && enabled
+
         width: parent ? parent.width : 0
-        height: 34
-        radius: 8
-        opacity: enabled ? 1 : 0.5
-        color: !rowMouse.containsMouse || !enabled ? "transparent"
-             : destructive ? "#25ef4444"
-             : (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff")
+        height: 28
+        radius: 6
+        color: highlighted ? Theme.accent : "transparent"
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left
             anchors.leftMargin: 10
             text: row.text
-            color: row.destructive ? "#ef4444" : (root.isLight ? "#0f172a" : "#ffffff")
-            font.pixelSize: 12
+            color: row.highlighted ? "#ffffff"
+                 : row.enabled ? Theme.textPrimary(root.isLight)
+                 : Theme.textTertiary(root.isLight)
+            font.pixelSize: 13
         }
 
         MouseArea {
@@ -158,7 +160,6 @@ PopupWindow {
             anchors.fill: parent
             hoverEnabled: true
             enabled: row.enabled
-            cursorShape: Qt.PointingHandCursor
             onClicked: row.activated()
         }
     }
@@ -169,29 +170,25 @@ PopupWindow {
         property bool destructive: false
         signal activated()
 
-        width: pillLabel.implicitWidth + 24
-        height: 26
-        radius: 13
+        width: Math.max(64, pillLabel.implicitWidth + 24)
+        height: 24
+        radius: 6
         color: destructive
-            ? (pillMouse.containsMouse ? "#dc2626" : "#ef4444")
-            : (pillMouse.containsMouse
-                ? (root.isLight ? Qt.rgba(0, 0, 0, 0.12) : "#30ffffff")
-                : (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#18ffffff"))
+            ? (pillMouse.pressed ? Qt.darker(Theme.destructive, 1.15) : Theme.destructive)
+            : (pillMouse.pressed ? Theme.pressFill(root.isLight) : Theme.controlFill(root.isLight))
 
         Text {
             id: pillLabel
             anchors.centerIn: parent
             text: pill.text
-            color: pill.destructive ? "#ffffff" : (root.isLight ? "#0f172a" : "#ffffff")
+            color: pill.destructive ? "#ffffff" : Theme.textPrimary(root.isLight)
             font.pixelSize: 12
-            font.weight: Font.Medium
         }
 
         MouseArea {
             id: pillMouse
             anchors.fill: parent
             hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
             onClicked: pill.activated()
         }
     }

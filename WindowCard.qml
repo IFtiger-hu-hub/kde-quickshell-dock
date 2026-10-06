@@ -10,8 +10,21 @@ Item {
     property var cellRef: null
 
     readonly property bool isLight: dockRef ? dockRef.isLight : false
-    readonly property bool isActive: winData ? winData.active === true : false
-    readonly property bool isMinimized: winData ? winData.minimized === true : false
+    readonly property bool circularIcons: dockRef ? dockRef.circularIcons : Config.circularIcons
+    readonly property bool isActive: {
+        Tasks.revision;
+        if (winData && winData.modelIndex) {
+            return Tasks.isWindowActive(winData.modelIndex);
+        }
+        return winData ? winData.active === true : false;
+    }
+    readonly property bool isMinimized: {
+        Tasks.revision;
+        if (winData && winData.modelIndex) {
+            return Tasks.isWindowMinimized(winData.modelIndex);
+        }
+        return winData ? winData.minimized === true : false;
+    }
 
     // App name & icon resolution with full fallback chain
     readonly property string appName: (cellRef && cellRef.entry && cellRef.entry.name)
@@ -86,7 +99,7 @@ Item {
     height: Math.max(38, (dockRef ? dockRef.cellSize : 52) - 6)
 
     // Smooth press and hover scaling
-    scale: cardMouse.pressed ? 0.96 : (cardMouse.containsMouse ? 1.02 : 1.0)
+    scale: cardMouse.pressed ? 0.97 : 1.0
     Behavior on scale {
         NumberAnimation { duration: 130; easing.type: Easing.OutQuad }
     }
@@ -132,7 +145,7 @@ Item {
                 saturation: 0.35
                 maskEnabled: true
                 maskSource: maskPlate
-                opacity: root.isLight ? 0.28 : 0.42
+                opacity: root.isLight ? 0.20 : 0.30
             }
         }
 
@@ -143,31 +156,18 @@ Item {
             radius: 12
 
             color: root.isActive
-                ? (root.isLight ? Qt.rgba(0.01, 0.52, 0.78, 0.18) : Qt.rgba(0.23, 0.51, 0.96, 0.28))
+                ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, root.isLight ? 0.12 : 0.20)
                 : (cardMouse.containsMouse
-                    ? (root.isLight ? Qt.rgba(1, 1, 1, 0.88) : Qt.rgba(0.13, 0.16, 0.23, 0.88))
-                    : (root.isLight ? Qt.rgba(1, 1, 1, 0.75) : Qt.rgba(0.08, 0.11, 0.18, 0.80)))
+                    ? (root.isLight ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0.20, 0.20, 0.21, 0.85))
+                    : (root.isLight ? Qt.rgba(1, 1, 1, 0.70) : Qt.rgba(0.14, 0.14, 0.15, 0.78)))
 
-            border.width: root.isActive ? 1.5 : 1
+            border.width: 1
             border.color: root.isActive
-                ? (root.isLight ? "#0284c7" : "#3b82f6")
-                : (cardMouse.containsMouse
-                    ? (root.isLight ? Qt.rgba(0, 0, 0, 0.18) : Qt.rgba(1, 1, 1, 0.26))
-                    : (root.isLight ? Qt.rgba(0, 0, 0, 0.09) : Qt.rgba(1, 1, 1, 0.13)))
+                ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.55)
+                : Theme.surfaceBorder(root.isLight)
 
             Behavior on color { ColorAnimation { duration: 120 } }
             Behavior on border.color { ColorAnimation { duration: 120 } }
-
-            // Top specular highlight shelf reflection
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 1
-                height: 1
-                radius: 12
-                color: root.isLight ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(1, 1, 1, 0.20)
-            }
         }
 
         // Layer 3: Foreground Content
@@ -189,18 +189,16 @@ Item {
                     color: "#25000000"
                     y: 1.5
                     z: -1
+                    visible: !root.circularIcons
                 }
 
-                Image {
+                CircleIcon {
                     id: fgIcon
                     anchors.fill: parent
                     source: root.resolvedIcon
-                    sourceSize.width: 56
-                    sourceSize.height: 56
-                    fillMode: Image.PreserveAspectFit
-                    asynchronous: true
-                    smooth: true
-                    mipmap: true
+                    circular: root.circularIcons
+                    isLight: root.isLight
+                    renderSize: 56
                 }
             }
 
@@ -211,43 +209,13 @@ Item {
                 width: parent.width - 28 - (closeBtn.visible ? 26 : 6) - 10
                 spacing: 2
 
-                // Top: App Name and Status Badge
-                Row {
-                    spacing: 6
+                // Top: app name, plus "已最小化" when relevant
+                Text {
                     width: parent.width
-
-                    Text {
-                        text: root.appName !== "" ? root.appName : "应用"
-                        color: root.isLight
-                            ? (root.isActive ? "#0284c7" : "#475569")
-                            : (root.isActive ? "#60a5fa" : "#94a3b8")
-                        font.pixelSize: 10
-                        font.weight: Font.DemiBold
-                        elide: Text.ElideRight
-                    }
-
-                    Row {
-                        spacing: 3
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Rectangle {
-                            width: 5
-                            height: 5
-                            radius: 2.5
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: root.isActive
-                                ? (root.isLight ? "#059669" : "#10b981")
-                                : (root.isMinimized ? "#f59e0b" : (root.isLight ? "#94a3b8" : "#64748b"))
-                        }
-
-                        Text {
-                            text: root.isActive ? "当前" : (root.isMinimized ? "最小化" : "")
-                            font.pixelSize: 9
-                            color: root.isLight ? "#64748b" : "#94a3b8"
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: text !== ""
-                        }
-                    }
+                    text: (root.appName !== "" ? root.appName : "应用") + (root.isMinimized ? " · 已最小化" : "")
+                    color: Theme.textSecondary(root.isLight)
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
                 }
 
                 // Bottom: Actual Window Title
@@ -255,11 +223,9 @@ Item {
                     id: titleText
                     width: parent.width
                     text: root.windowTitle
-                    color: root.isLight
-                        ? (root.isActive ? "#0284c7" : "#0f172a")
-                        : (root.isActive ? "#ffffff" : "#f1f5f9")
+                    color: Theme.textPrimary(root.isLight)
                     font.pixelSize: 12
-                    font.weight: root.isActive ? Font.Bold : Font.Medium
+                    font.weight: root.isActive ? Font.DemiBold : Font.Normal
                     elide: Text.ElideRight
                 }
             }
@@ -275,9 +241,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: 10
-                    color: closeMouse.containsMouse
-                        ? "#ef4444"
-                        : (root.isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.15))
+                    color: closeMouse.containsMouse ? Theme.destructive : Theme.controlFill(root.isLight)
 
                     Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -285,10 +249,7 @@ Item {
                         anchors.centerIn: parent
                         text: "×"
                         font.pixelSize: 13
-                        font.weight: Font.Bold
-                        color: closeMouse.containsMouse
-                            ? "#ffffff"
-                            : (root.isLight ? "#475569" : "#cbd5e1")
+                        color: closeMouse.containsMouse ? "#ffffff" : Theme.textSecondary(root.isLight)
                     }
                 }
 
@@ -296,7 +257,6 @@ Item {
                     id: closeMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
                     onClicked: mouse => {
                         mouse.accepted = true;
                         if (root.winData && root.winData.modelIndex) {
@@ -312,13 +272,9 @@ Item {
         id: cardMouse
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
         onClicked: {
             if (root.winData && root.winData.modelIndex) {
                 Tasks.activateWindow(root.winData.modelIndex);
-            }
-            if (root.dockRef) {
-                root.dockRef.expandedAppKey = "";
             }
         }
     }

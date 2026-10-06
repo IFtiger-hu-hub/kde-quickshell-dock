@@ -3,7 +3,10 @@ import Quickshell.Wayland
 import QtQuick
 import QtQuick.Effects
 
-PopupWindow {
+// Pinned to the screen edge (not to the dock), so resizing the dock from the
+// sliders never moves the panel. Only the dock position setting changes
+// which edge it sits on.
+PanelWindow {
     id: root
 
     property string activeScreen: ""
@@ -15,12 +18,32 @@ PopupWindow {
 
     readonly property string panelPosition: Config.getVal(activeScreen, "position")
 
-    anchor.edges: panelPosition === "top" ? Edges.Bottom
-                : panelPosition === "left" ? Edges.Right
-                : panelPosition === "right" ? Edges.Left
-                : Edges.Top
-    anchor.gravity: anchor.edges
-    anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY
+    // Fixed distance from the screen edge. Clears the thickest dock the sliders
+    // allow (icon 96 + cell padding 2x8 + plate padding 2x14 + edge gap 24 = 164)
+    // and is deliberately independent of the current dock geometry.
+    readonly property int edgeOffset: {
+        const sw = screen ? screen.width : 1920;
+        const sh = screen ? screen.height : 1080;
+        const room = (panelPosition === "left" || panelPosition === "right")
+            ? (sw - implicitWidth) : (sh - implicitHeight);
+        return Math.max(0, Math.min(172, room - 8));
+    }
+
+    anchors.bottom: panelPosition === "bottom" || panelPosition === ""
+    anchors.top: panelPosition === "top"
+    anchors.left: panelPosition === "left"
+    anchors.right: panelPosition === "right"
+    margins.bottom: anchors.bottom ? edgeOffset : 0
+    margins.top: anchors.top ? edgeOffset : 0
+    margins.left: anchors.left ? edgeOffset : 0
+    margins.right: anchors.right ? edgeOffset : 0
+
+    // Measure from the raw screen edge, ignoring the dock's reserved zone,
+    // otherwise toggling/resizing a reserving dock would shift the panel.
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "quickshell-dock-settings"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     implicitWidth: 520 + (panelPosition === "left" || panelPosition === "right" ? 20 : 0)
     implicitHeight: 590 + (panelPosition === "top" || panelPosition === "bottom" ? 20 : 0)
@@ -70,28 +93,197 @@ PopupWindow {
         return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.5;
     }
 
-    // Design Tokens (macOS Frosted Glass & Bento Card System)
-    readonly property color cCardBg: isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.93) : Qt.rgba(0.12, 0.14, 0.19, 0.92)
-    readonly property color cCardBorder: isLight ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.13)
-    readonly property color cGroupBg: isLight ? Qt.rgba(0, 0, 0, 0.035) : Qt.rgba(1, 1, 1, 0.045)
-    readonly property color cGroupBorder: isLight ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.07)
-    readonly property color cDivider: isLight ? Qt.rgba(0, 0, 0, 0.05) : Qt.rgba(1, 1, 1, 0.06)
+    // Design tokens: neutral greys + the KDE accent colour (see Theme.qml)
+    readonly property color cCardBg: Theme.surface(isLight)
+    readonly property color cCardBorder: Theme.surfaceBorder(isLight)
+    readonly property color cGroupBg: Theme.groupFill(isLight)
+    readonly property color cGroupBorder: "transparent"
+    readonly property color cDivider: Theme.separator(isLight)
 
-    readonly property color cTextPrimary: isLight ? "#0f172a" : "#f8fafc"
-    readonly property color cTextSecondary: isLight ? "#64748b" : "#94a3b8"
-    readonly property color cTextMuted: isLight ? "#94a3b8" : "#64748b"
+    readonly property color cTextPrimary: Theme.textPrimary(isLight)
+    readonly property color cTextSecondary: Theme.textSecondary(isLight)
+    readonly property color cTextMuted: Theme.textTertiary(isLight)
 
-    readonly property color cAccent: isLight ? "#0284c7" : "#3b82f6"
-    readonly property color cAccentHover: isLight ? "#0369a1" : "#60a5fa"
-    readonly property color cAccentBg: isLight ? Qt.rgba(2, 132, 199, 0.12) : Qt.rgba(59, 130, 246, 0.20)
-    readonly property color cAccentBorder: isLight ? Qt.rgba(2, 132, 199, 0.35) : Qt.rgba(59, 130, 246, 0.40)
+    readonly property color cAccent: Theme.accent
+    readonly property color cAccentHover: Qt.darker(Theme.accent, 1.1)
+    readonly property color cAccentBg: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, isLight ? 0.12 : 0.22)
+    readonly property color cAccentBorder: "transparent"
 
-    readonly property color cChipBg: isLight ? Qt.rgba(0, 0, 0, 0.05) : Qt.rgba(1, 1, 1, 0.07)
-    readonly property color cChipHover: isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.13)
-    readonly property color cChipBorder: isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.10)
-    readonly property color cChipText: isLight ? "#334155" : "#cbd5e1"
+    readonly property color cChipBg: Theme.controlFill(isLight)
+    readonly property color cChipHover: Theme.pressFill(isLight)
+    readonly property color cChipBorder: "transparent"
+    readonly property color cChipText: Theme.textPrimary(isLight)
 
-    // Component for a clean Slider Row with real-time thumb tracking and debounced commit
+
+    readonly property var screenOptions: {
+        const a = [];
+        const s = Quickshell.screens;
+        for (let i = 0; s && i < s.length; i++) a.push({ key: s[i].name, label: s[i].name });
+        return a;
+    }
+
+    // ---- Shared building blocks ----
+
+    // Inset section of a grouped list
+    component Group: Rectangle {
+        default property alias content: groupCol.data
+        width: parent ? parent.width : 400
+        height: groupCol.height + 8
+        radius: 10
+        color: root.cGroupBg
+
+        Column {
+            id: groupCol
+            x: 14
+            y: 4
+            width: parent.width - 28
+        }
+    }
+
+    component Divider: Rectangle {
+        width: parent ? parent.width : 0
+        height: 1
+        color: root.cDivider
+    }
+
+    // Segmented control: neutral track, raised segment marks the selection
+    component Segmented: Rectangle {
+        id: seg
+        property var options: []    // [{ key, label }]
+        property var current
+        property real segWidth: 64
+        signal picked(var key)
+
+        readonly property int currentIndex: {
+            for (let i = 0; i < options.length; i++)
+                if (options[i].key === current) return i;
+            return -1;
+        }
+
+        width: options.length * segWidth + 4
+        height: 26
+        radius: 7
+        color: Theme.controlFill(root.isLight)
+
+        Rectangle {
+            visible: seg.currentIndex >= 0
+            x: 2 + Math.max(0, seg.currentIndex) * seg.segWidth
+            y: 2
+            width: seg.segWidth
+            height: seg.height - 4
+            radius: 5
+            color: root.isLight ? "#ffffff" : Qt.rgba(1, 1, 1, 0.16)
+            border.width: root.isLight ? 1 : 0
+            border.color: Qt.rgba(0, 0, 0, 0.06)
+
+            Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        }
+
+        Row {
+            x: 2
+            y: 2
+
+            Repeater {
+                model: seg.options
+
+                Item {
+                    required property var modelData
+                    required property int index
+                    width: seg.segWidth
+                    height: seg.height - 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 8
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        text: modelData.label
+                        color: index === seg.currentIndex ? root.cTextPrimary : root.cTextSecondary
+                        font.pixelSize: 11
+                        font.weight: index === seg.currentIndex ? Font.Medium : Font.Normal
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: seg.picked(modelData.key)
+                    }
+                }
+            }
+        }
+    }
+
+    // Title (+ optional description) on the left, segmented control on the right
+    component ChoiceRow: Item {
+        id: cr
+        property string title: ""
+        property string desc: ""
+        property alias options: crSeg.options
+        property alias current: crSeg.current
+        property alias segWidth: crSeg.segWidth
+        signal picked(var key)
+
+        width: parent ? parent.width : 400
+        height: desc !== "" ? 54 : 44
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: crSeg.left
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+
+            Text {
+                width: parent.width
+                elide: Text.ElideRight
+                text: cr.title
+                color: root.cTextPrimary
+                font.pixelSize: 13
+            }
+            Text {
+                width: parent.width
+                elide: Text.ElideRight
+                text: cr.desc
+                color: root.cTextSecondary
+                font.pixelSize: 11
+                visible: text !== ""
+            }
+        }
+
+        Segmented {
+            id: crSeg
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            onPicked: key => cr.picked(key)
+        }
+    }
+
+    // Plain push button
+    component PushButton: Rectangle {
+        id: pb
+        property string text: ""
+        signal clicked()
+
+        width: pbLabel.implicitWidth + 24
+        height: 24
+        radius: 6
+        color: pbArea.pressed ? Theme.pressFill(root.isLight) : Theme.controlFill(root.isLight)
+
+        Text {
+            id: pbLabel
+            anchors.centerIn: parent
+            text: pb.text
+            color: root.cTextPrimary
+            font.pixelSize: 12
+        }
+
+        MouseArea {
+            id: pbArea
+            anchors.fill: parent
+            onClicked: pb.clicked()
+        }
+    }
+
+    // Slider row with live thumb tracking and debounced commit
     component SliderRow: Item {
         id: sr
         property string title: ""
@@ -101,6 +293,7 @@ PopupWindow {
         property real step: 1
         property real value: 0
         property string unit: ""
+        property bool percent: false
         signal modified(real val)
 
         property real localVal: value
@@ -128,8 +321,14 @@ PopupWindow {
             }
         }
 
+        readonly property string valueText: {
+            if (percent) return Math.round(localVal * 100) + "%";
+            const decimals = step < 0.1 ? 2 : (step < 1 ? 1 : 0);
+            return localVal.toFixed(decimals) + unit;
+        }
+
         width: parent ? parent.width : 400
-        height: 54
+        height: desc !== "" ? 54 : 44
 
         Column {
             anchors.left: parent.left
@@ -139,12 +338,15 @@ PopupWindow {
             spacing: 2
 
             Text {
+                width: parent.width
+                elide: Text.ElideRight
                 text: sr.title
                 color: root.cTextPrimary
                 font.pixelSize: 13
-                font.weight: Font.Medium
             }
             Text {
+                width: parent.width
+                elide: Text.ElideRight
                 text: sr.desc
                 color: root.cTextSecondary
                 font.pixelSize: 11
@@ -179,53 +381,38 @@ PopupWindow {
                 x: 0
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 52
-                height: 6
-                radius: 3
-                color: root.isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(255, 255, 255, 0.12)
+                height: 4
+                radius: 2
+                color: Theme.trackFill(root.isLight)
 
                 Rectangle {
                     height: parent.height
                     width: parent.width * sliderBox.normalized
-                    radius: 3
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: root.cAccent }
-                        GradientStop { position: 1.0; color: "#38bdf8" }
-                    }
+                    radius: 2
+                    color: root.cAccent
                 }
             }
 
             Rectangle {
                 x: (parent.width - 52) * sliderBox.normalized - width / 2
                 anchors.verticalCenter: parent.verticalCenter
-                width: 16
-                height: 16
-                radius: 8
-                color: "#ffffff"
+                width: 18
+                height: 18
+                radius: 9
+                color: dragArea.pressed ? "#f0f0f0" : "#ffffff"
                 border.width: 1
-                border.color: Qt.rgba(0, 0, 0, 0.12)
-
-                scale: dragArea.pressed ? 1.22 : dragArea.containsMouse ? 1.12 : 1.0
-                Behavior on scale { NumberAnimation { duration: 100 } }
+                border.color: Qt.rgba(0, 0, 0, 0.15)
             }
 
-            Rectangle {
+            Text {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 width: 44
-                height: 22
-                radius: 6
-                color: root.cChipBg
-                border.width: 1
-                border.color: root.cChipBorder
-
-                Text {
-                    anchors.centerIn: parent
-                    text: (sr.step < 1 ? sr.localVal.toFixed(2) : Math.round(sr.localVal)) + sr.unit
-                    color: root.cTextPrimary
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                }
+                horizontalAlignment: Text.AlignRight
+                text: sr.valueText
+                color: root.cTextSecondary
+                font.pixelSize: 12
+                font.features: { "tnum": 1 }
             }
 
             MouseArea {
@@ -234,8 +421,6 @@ PopupWindow {
                 anchors.right: trackBg.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
 
                 onPressed: mouse => sliderBox.applyMouse(mouse.x)
                 onPositionChanged: mouse => {
@@ -247,7 +432,7 @@ PopupWindow {
         }
     }
 
-    // Component for a clean iOS/macOS styled Switch Row
+    // Switch row
     component SwitchRow: Item {
         id: sw
         property string title: ""
@@ -256,7 +441,7 @@ PopupWindow {
         signal toggled(bool next)
 
         width: parent ? parent.width : 400
-        height: 50
+        height: desc !== "" ? 54 : 44
 
         Column {
             anchors.left: parent.left
@@ -266,12 +451,15 @@ PopupWindow {
             spacing: 2
 
             Text {
+                width: parent.width
+                elide: Text.ElideRight
                 text: sw.title
                 color: root.cTextPrimary
                 font.pixelSize: 13
-                font.weight: Font.Medium
             }
             Text {
+                width: parent.width
+                elide: Text.ElideRight
                 text: sw.desc
                 color: root.cTextSecondary
                 font.pixelSize: 11
@@ -283,15 +471,13 @@ PopupWindow {
             id: toggleBtn
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            width: 44
-            height: 24
+            width: 38
+            height: 22
 
             Rectangle {
                 anchors.fill: parent
                 radius: height / 2
-                color: sw.checked ? "#10b981" : (root.isLight ? "#cbd5e1" : "#333d4d")
-                border.width: 1
-                border.color: sw.checked ? "#059669" : (root.isLight ? "#94a3b8" : "#475569")
+                color: sw.checked ? root.cAccent : Theme.trackFill(root.isLight)
 
                 Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -302,6 +488,8 @@ PopupWindow {
                     height: width
                     radius: width / 2
                     color: "#ffffff"
+                    border.width: 1
+                    border.color: Qt.rgba(0, 0, 0, 0.08)
 
                     Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                 }
@@ -309,13 +497,12 @@ PopupWindow {
 
             MouseArea {
                 anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
                 onClicked: sw.toggled(!sw.checked)
             }
         }
     }
 
-    // Main Card background with Ambient Shadow
+    // ---- Card ----
     Rectangle {
         id: card
         anchors.fill: parent
@@ -323,21 +510,10 @@ PopupWindow {
         anchors.rightMargin: root.panelPosition === "right" ? 16 : 6
         anchors.topMargin: root.panelPosition === "top" ? 16 : 6
         anchors.bottomMargin: root.panelPosition === "bottom" ? 16 : 6
-        radius: 16
+        radius: 12
         color: root.cCardBg
         border.width: 1
         border.color: root.cCardBorder
-
-        // 1px Top Specular Highlight Shelf (Signature macOS Glass Reflection)
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: 1
-            height: 1
-            radius: 16
-            color: root.isLight ? Qt.rgba(1, 1, 1, 0.95) : Qt.rgba(1, 1, 1, 0.22)
-        }
 
         // ---- Header ----
         Item {
@@ -345,1502 +521,578 @@ PopupWindow {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 56
+            height: 52
 
-            Row {
+            Column {
                 anchors.left: parent.left
                 anchors.leftMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 12
+                spacing: 1
 
-                // Control Center Squircle Icon
-                Rectangle {
-                    width: 32
-                    height: 32
-                    radius: 8
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: root.isLight ? "#0284c7" : "#2563eb" }
-                        GradientStop { position: 1.0; color: root.isLight ? "#38bdf8" : "#60a5fa" }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "⚙"
-                        font.pixelSize: 16
-                        color: "#ffffff"
-                    }
+                Text {
+                    text: "Dock"
+                    color: root.cTextPrimary
+                    font.pixelSize: 15
+                    font.weight: Font.DemiBold
                 }
-
-                Column {
-                    spacing: 1
-                    Text {
-                        text: "macOS Dock 设置"
-                        color: root.cTextPrimary
-                        font.pixelSize: 14
-                        font.weight: Font.Bold
-                    }
-                    Text {
-                        text: Config.perScreenConfig ? ("独立屏幕配置已生效 · " + root.selectedScreen) : "全局配置 · 实时毛玻璃渲染"
-                        color: root.cTextSecondary
-                        font.pixelSize: 11
-                    }
+                Text {
+                    visible: Config.perScreenConfig
+                    text: "正在编辑：" + root.selectedScreen
+                    color: root.cTextSecondary
+                    font.pixelSize: 11
                 }
             }
 
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: 16
+                anchors.rightMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 6
+                spacing: 8
 
-                // Light Mode Preset Button
-                Rectangle {
-                    width: 84
-                    height: 26
-                    radius: 6
-                    color: root.isLight
-                        ? (root.isLight ? Qt.rgba(245, 158, 11, 0.16) : Qt.rgba(245, 158, 11, 0.22))
-                        : (lightHover.containsMouse ? root.cChipHover : root.cChipBg)
-                    border.width: 1
-                    border.color: root.isLight ? "#f59e0b" : root.cChipBorder
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "☀️ 亮色"
-                        color: root.isLight ? "#d97706" : root.cTextSecondary
-                        font.pixelSize: 11
-                        font.weight: root.isLight ? Font.DemiBold : Font.Normal
-                    }
-
-                    MouseArea {
-                        id: lightHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: Config.applyLightPreset(Config.perScreenConfig ? root.selectedScreen : null)
+                Segmented {
+                    anchors.verticalCenter: parent.verticalCenter
+                    segWidth: 48
+                    options: [{ key: true, label: "浅色" }, { key: false, label: "深色" }]
+                    current: root.isLight
+                    onPicked: key => {
+                        const scr = Config.perScreenConfig ? root.selectedScreen : null;
+                        if (key) Config.applyLightPreset(scr);
+                        else Config.applyDarkPreset(scr);
                     }
                 }
 
-                // Dark Mode Preset Button
-                Rectangle {
-                    width: 84
-                    height: 26
-                    radius: 6
-                    color: !root.isLight
-                        ? (root.isLight ? Qt.rgba(59, 130, 246, 0.16) : Qt.rgba(59, 130, 246, 0.25))
-                        : (darkHover.containsMouse ? root.cChipHover : root.cChipBg)
-                    border.width: 1
-                    border.color: !root.isLight ? root.cAccent : root.cChipBorder
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "🌙 暗色"
-                        color: !root.isLight ? (root.isLight ? "#2563eb" : "#60a5fa") : root.cTextSecondary
-                        font.pixelSize: 11
-                        font.weight: !root.isLight ? Font.DemiBold : Font.Normal
-                    }
-
-                    MouseArea {
-                        id: darkHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: Config.applyDarkPreset(Config.perScreenConfig ? root.selectedScreen : null)
-                    }
+                PushButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "恢复默认"
+                    onClicked: Config.resetDefaults(Config.perScreenConfig ? root.selectedScreen : null)
                 }
 
-                // Reset Button
+                // Close
                 Rectangle {
-                    width: 68
-                    height: 26
-                    radius: 6
-                    color: resetHover.containsMouse ? root.cChipHover : root.cChipBg
-                    border.width: 1
-                    border.color: root.cChipBorder
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 24
+                    height: 24
+                    radius: 12
+                    color: closeArea.containsMouse ? Theme.hoverFill(root.isLight) : "transparent"
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "恢复默认"
-                        color: root.cTextSecondary
-                        font.pixelSize: 11
+                    Repeater {
+                        model: [45, -45]
+                        Rectangle {
+                            required property int modelData
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 1.5
+                            radius: 0.75
+                            rotation: modelData
+                            color: root.cTextSecondary
+                        }
                     }
 
                     MouseArea {
-                        id: resetHover
+                        id: closeArea
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: Config.resetDefaults(Config.perScreenConfig ? root.selectedScreen : null)
-                    }
-                }
-
-                // Close Button (×)
-                Rectangle {
-                    width: 26
-                    height: 26
-                    radius: 13
-                    color: closeHover.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(255, 255, 255, 0.15)) : root.cChipBg
-                    border.width: 1
-                    border.color: root.cChipBorder
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "✕"
-                        color: root.cTextSecondary
-                        font.pixelSize: 11
-                    }
-
-                    MouseArea {
-                        id: closeHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
                         onClicked: root.visible = false
                     }
                 }
             }
-
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: root.cDivider
-            }
         }
 
-        // ---- Apple Segmented Tab bar ----
+        // ---- Tabs ----
         Item {
             id: tabBar
             anchors.top: header.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 44
+            height: 40
 
-            Rectangle {
+            Segmented {
                 anchors.centerIn: parent
-                width: parent.width - 32
-                height: 34
-                radius: 8
-                color: root.isLight ? Qt.rgba(0, 0, 0, 0.045) : Qt.rgba(0, 0, 0, 0.25)
-                border.width: 1
-                border.color: root.cGroupBorder
-
-                readonly property var tabs: [
-                    { id: 0, name: "位置屏幕" },
-                    { id: 1, name: "尺寸边距" },
-                    { id: 2, name: "自动隐藏" },
-                    { id: 3, name: "动效交互" },
-                    { id: 4, name: "运行底板" }
+                height: 28
+                segWidth: (tabBar.width - 32 - 4) / options.length
+                options: [
+                    { key: 0, label: "位置" },
+                    { key: 1, label: "大小" },
+                    { key: 2, label: "自动隐藏" },
+                    { key: 3, label: "效果" },
+                    { key: 4, label: "行为" }
                 ]
-
-                readonly property real tabW: (width - 4) / tabs.length
-
-                // Sliding Active Tab Indicator
-                Rectangle {
-                    x: 2 + root.currentTab * parent.tabW
-                    y: 2
-                    width: parent.tabW
-                    height: parent.height - 4
-                    radius: 6
-                    color: root.isLight ? "#ffffff" : "#283344"
-                    border.width: 1
-                    border.color: root.isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(255, 255, 255, 0.12)
-
-                    Behavior on x {
-                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                    }
-                }
-
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 2
-
-                    Repeater {
-                        model: parent.parent.tabs
-
-                        Item {
-                            required property var modelData
-                            width: parent.parent.tabW
-                            height: parent.height
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.name
-                                color: root.currentTab === modelData.id ? root.cTextPrimary : (root.isLight ? "#475569" : "#94a3b8")
-                                font.pixelSize: 11
-                                font.weight: root.currentTab === modelData.id ? Font.DemiBold : Font.Normal
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.currentTab = modelData.id
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: root.cDivider
+                current: root.currentTab
+                onPicked: key => root.currentTab = key
             }
         }
 
-        // ---- Persistent Screen Bar across all tabs when perScreenConfig is active ----
-        Rectangle {
+        // ---- Display picker (per-screen mode with several displays) ----
+        Item {
             id: screenBar
-            visible: Config.perScreenConfig && Quickshell.screens && Quickshell.screens.length > 1
+            visible: Config.perScreenConfig && root.screenOptions.length > 1
             anchors.top: tabBar.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: visible ? 42 : 0
-            color: root.isLight ? Qt.rgba(0, 0, 0, 0.02) : Qt.rgba(0, 0, 0, 0.15)
+            height: visible ? 36 : 0
 
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
+            Text {
                 anchors.left: parent.left
                 anchors.leftMargin: 18
-                spacing: 8
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "目标显示器:"
-                    color: root.cTextSecondary
-                    font.pixelSize: 11
-                    font.weight: Font.Medium
-                }
-
-                Repeater {
-                    model: Quickshell.screens
-
-                    Rectangle {
-                        required property var modelData
-                        required property int index
-                        height: 26
-                        width: Math.max(90, scrBarLabel.implicitWidth + 20)
-                        radius: 6
-                        color: root.selectedScreen === modelData.name
-                            ? root.cAccentBg
-                            : (barHover.containsMouse ? root.cChipHover : root.cChipBg)
-                        border.width: 1
-                        border.color: root.selectedScreen === modelData.name ? root.cAccentBorder : root.cChipBorder
-
-                        Text {
-                            id: scrBarLabel
-                            anchors.centerIn: parent
-                            text: (modelData.name.indexOf("eDP") >= 0 ? "💻 " : "🖥 ") + modelData.name + (modelData.name === root.activeScreen ? " (当前)" : "")
-                            color: root.selectedScreen === modelData.name ? root.cAccent : root.cTextSecondary
-                            font.pixelSize: 11
-                            font.weight: root.selectedScreen === modelData.name ? Font.DemiBold : Font.Normal
-                        }
-
-                        MouseArea {
-                            id: barHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.selectedScreen = modelData.name
-                        }
-                    }
-                }
+                anchors.verticalCenter: parent.verticalCenter
+                text: "显示器"
+                color: root.cTextSecondary
+                font.pixelSize: 12
             }
 
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
+            Segmented {
                 anchors.right: parent.right
-                height: 1
-                color: root.cDivider
+                anchors.rightMargin: 16
+                anchors.verticalCenter: parent.verticalCenter
+                segWidth: 96
+                options: root.screenOptions
+                current: root.selectedScreen
+                onPicked: key => root.selectedScreen = key
             }
         }
 
-        // ---- Content Area ----
+        // ---- Content ----
         Flickable {
             id: flick
-            anchors.top: screenBar.visible ? screenBar.bottom : tabBar.bottom
-            anchors.topMargin: 10
+            anchors.top: screenBar.bottom
+            anchors.topMargin: 4
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 10
+            anchors.bottomMargin: 14
             anchors.left: parent.left
             anchors.leftMargin: 16
             anchors.right: parent.right
             anchors.rightMargin: 16
             contentHeight: contentCol.height
+            boundsBehavior: Flickable.StopAtBounds
             clip: true
 
             Column {
                 id: contentCol
                 width: flick.width
-                spacing: 10
 
-                // ==================== TAB 0: 位置与屏幕 ====================
+                // ==================== 位置 ====================
                 Column {
                     width: parent.width
-                    spacing: 10
+                    spacing: 14
                     visible: root.currentTab === 0
 
-                    // 1. 多屏幕独立配置主开关卡片 (Bento Group Card)
-                    Rectangle {
-                        width: parent.width
-                        height: perScreenCol.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: Config.perScreenConfig ? root.cAccentBorder : root.cGroupBorder
+                    Group {
+                        SwitchRow {
+                            title: "每个显示器单独设置"
+                            desc: "为每个显示器分别设置位置、大小和外观"
+                            checked: Config.perScreenConfig
+                            onToggled: next => Config.setPerScreenConfig(next)
+                        }
+                        Divider { visible: Config.perScreenConfig }
+                        SwitchRow {
+                            visible: Config.perScreenConfig
+                            title: "在此显示器上显示 Dock"
+                            desc: root.selectedScreen
+                            checked: root.getVal("enabled") !== false
+                            onToggled: next => root.setVal("enabled", next)
+                        }
+                        Divider { visible: Config.perScreenConfig }
+                        Item {
+                            visible: Config.perScreenConfig
+                            width: parent.width
+                            height: 44
 
-                        Column {
-                            id: perScreenCol
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 8
-
-                            Item {
-                                width: parent.width
-                                height: 44
-
-                                Column {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 2
-
-                                    Text {
-                                        text: "多屏幕独立配置 (Per-Screen Customization)"
-                                        color: root.cTextPrimary
-                                        font.pixelSize: 13
-                                        font.weight: Font.DemiBold
-                                    }
-                                    Text {
-                                        text: "开启后每个显示器可拥有完全独立的停靠位置、尺寸、自动隐藏与外观"
-                                        color: root.cTextSecondary
-                                        font.pixelSize: 11
-                                    }
-                                }
-
-                                Item {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 44
-                                    height: 24
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: height / 2
-                                        color: Config.perScreenConfig ? "#10b981" : (root.isLight ? "#cbd5e1" : "#333d4d")
-                                        border.width: 1
-                                        border.color: Config.perScreenConfig ? "#059669" : (root.isLight ? "#94a3b8" : "#475569")
-
-                                        Behavior on color { ColorAnimation { duration: 140 } }
-
-                                        Rectangle {
-                                            x: Config.perScreenConfig ? parent.width - width - 2 : 2
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            width: parent.height - 4
-                                            height: width
-                                            radius: width / 2
-                                            color: "#ffffff"
-
-                                            Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: Config.setPerScreenConfig(!Config.perScreenConfig)
-                                    }
-                                }
-                            }
-
-                            // 独立配置开启时的状态与快捷操作
-                            Column {
-                                width: parent.width
+                            Row {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
                                 spacing: 8
-                                visible: Config.perScreenConfig
 
-                                Rectangle {
-                                    width: parent.width
-                                    height: 1
-                                    color: root.cDivider
+                                PushButton {
+                                    text: "复制全局设置"
+                                    onClicked: Config.copyGlobalToScreen(root.selectedScreen)
                                 }
-
-                                // 选中屏幕是否开启 Dock
-                                Item {
-                                    width: parent.width
-                                    height: 38
-
-                                    Column {
-                                        anchors.left: parent.left
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 2
-                                        Text {
-                                            text: "在此屏幕上启用 Dock"
-                                            color: root.cTextPrimary
-                                            font.pixelSize: 12
-                                            font.weight: Font.Medium
-                                        }
-                                        Text {
-                                            text: "目标屏幕: " + root.selectedScreen
-                                            color: root.cTextMuted
-                                            font.pixelSize: 10
-                                        }
-                                    }
-
-                                    Item {
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 40
-                                        height: 22
-
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            radius: height / 2
-                                            color: root.getVal("enabled") !== false ? "#10b981" : (root.isLight ? "#cbd5e1" : "#333d4d")
-                                            border.width: 1
-                                            border.color: root.getVal("enabled") !== false ? "#059669" : (root.isLight ? "#94a3b8" : "#475569")
-
-                                            Behavior on color { ColorAnimation { duration: 140 } }
-
-                                            Rectangle {
-                                                x: root.getVal("enabled") !== false ? parent.width - width - 2 : 2
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.height - 4
-                                                height: width
-                                                radius: width / 2
-                                                color: "#ffffff"
-
-                                                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.setVal("enabled", root.getVal("enabled") === false ? true : false)
-                                        }
-                                    }
-                                }
-
-                                // 快捷操作按钮
-                                Row {
-                                    spacing: 8
-
-                                    Rectangle {
-                                        width: 140
-                                        height: 26
-                                        radius: 6
-                                        color: cpGlobalHover.containsMouse ? root.cChipHover : root.cChipBg
-                                        border.width: 1
-                                        border.color: root.cChipBorder
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "📋 复制全局配置至此"
-                                            color: root.cTextSecondary
-                                            font.pixelSize: 11
-                                        }
-
-                                        MouseArea {
-                                            id: cpGlobalHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Config.copyGlobalToScreen(root.selectedScreen)
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        width: 130
-                                        height: 26
-                                        radius: 6
-                                        color: rstScrHover.containsMouse ? Qt.rgba(239, 68, 68, 0.18) : root.cChipBg
-                                        border.width: 1
-                                        border.color: rstScrHover.containsMouse ? "#ef4444" : root.cChipBorder
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "🔄 重置此屏幕配置"
-                                            color: rstScrHover.containsMouse ? "#ef4444" : root.cTextSecondary
-                                            font.pixelSize: 11
-                                        }
-
-                                        MouseArea {
-                                            id: rstScrHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Config.resetScreenConfig(root.selectedScreen)
-                                        }
-                                    }
+                                PushButton {
+                                    text: "还原此显示器"
+                                    onClicked: Config.resetScreenConfig(root.selectedScreen)
                                 }
                             }
                         }
                     }
 
-                    // 2. 停靠边缘 Bento Group Card
-                    Rectangle {
-                        width: parent.width
-                        height: 60
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Item {
-                            anchors.fill: parent
-                            anchors.margins: 14
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-
-                                Text {
-                                    text: "停靠边缘" + (Config.perScreenConfig ? (" (" + root.selectedScreen + ")") : "")
-                                    color: root.cTextPrimary
-                                    font.pixelSize: 13
-                                    font.weight: Font.Medium
-                                }
-                                Text {
-                                    text: "选择 Dock 在屏幕上停靠吸附的方向"
-                                    color: root.cTextSecondary
-                                    font.pixelSize: 11
-                                }
-                            }
-
-                            Row {
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 6
-
-                                readonly property var positions: [
-                                    { key: "bottom", label: "⬇ 底部" },
-                                    { key: "top", label: "⬆ 顶部" },
-                                    { key: "left", label: "⬅ 左侧" },
-                                    { key: "right", label: "➡ 右侧" }
-                                ]
-
-                                Repeater {
-                                    model: parent.positions
-
-                                    Rectangle {
-                                        required property var modelData
-                                        width: 54
-                                        height: 28
-                                        radius: 6
-                                        color: root.getVal("position") === modelData.key
-                                            ? root.cAccentBg
-                                            : (posHover.containsMouse ? root.cChipHover : root.cChipBg)
-                                        border.width: 1
-                                        border.color: root.getVal("position") === modelData.key ? root.cAccentBorder : root.cChipBorder
-
-                                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: modelData.label
-                                            color: root.getVal("position") === modelData.key ? root.cAccent : root.cTextSecondary
-                                            font.pixelSize: 11
-                                            font.weight: root.getVal("position") === modelData.key ? Font.DemiBold : Font.Normal
-                                        }
-
-                                        MouseArea {
-                                            id: posHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.setVal("position", modelData.key)
-                                        }
-                                    }
-                                }
-                            }
+                    Group {
+                        ChoiceRow {
+                            title: "屏幕上的位置"
+                            segWidth: 48
+                            options: [
+                                { key: "left", label: "左侧" },
+                                { key: "bottom", label: "底部" },
+                                { key: "right", label: "右侧" },
+                                { key: "top", label: "顶部" }
+                            ]
+                            current: root.getVal("position")
+                            onPicked: key => root.setVal("position", key)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "与屏幕边缘的距离"
+                            min: 0; max: 24; step: 1
+                            value: root.getVal("bottomMargin"); unit: " px"
+                            onModified: val => root.setVal("bottomMargin", Math.round(val))
                         }
                     }
 
-                    // 3. 屏幕边缘留白
-                    Rectangle {
-                        width: parent.width
-                        height: 60
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Item {
-                            anchors.fill: parent
-                            anchors.margins: 14
-
-                            SliderRow {
-                                anchors.fill: parent
-                                title: "屏幕边缘留白"
-                                desc: "Dock 距离屏幕边缘的悬浮高度"
-                                min: 0; max: 24; step: 1
-                                value: root.getVal("bottomMargin"); unit: " px"
-                                onModified: val => root.setVal("bottomMargin", Math.round(val))
-                            }
-                        }
-                    }
-
-                    // 4. 全局模式下的显示屏幕策略 (仅在 perScreenConfig 为关闭时显示)
-                    Rectangle {
-                        width: parent.width
-                        height: 60
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
+                    Group {
                         visible: !Config.perScreenConfig
-
-                        Item {
-                            anchors.fill: parent
-                            anchors.margins: 14
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-
-                                Text {
-                                    text: "多屏显示策略"
-                                    color: root.cTextPrimary
-                                    font.pixelSize: 13
-                                    font.weight: Font.Medium
-                                }
-                                Text {
-                                    text: "单屏显示可大幅降低显存与内存占用"
-                                    color: root.cTextSecondary
-                                    font.pixelSize: 11
-                                }
-                            }
-
-                            Row {
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 6
-
-                                readonly property var modes: [
-                                    { key: "all", label: "全部屏幕" },
-                                    { key: "primary", label: "仅主屏幕" },
-                                    { key: "custom", label: "指定屏幕" }
-                                ]
-
-                                Repeater {
-                                    model: parent.modes
-
-                                    Rectangle {
-                                        required property var modelData
-                                        width: 68
-                                        height: 28
-                                        radius: 6
-                                        color: Config.screenMode === modelData.key
-                                            ? root.cAccentBg
-                                            : (modeHover.containsMouse ? root.cChipHover : root.cChipBg)
-                                        border.width: 1
-                                        border.color: Config.screenMode === modelData.key ? root.cAccentBorder : root.cChipBorder
-
-                                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: modelData.label
-                                            color: Config.screenMode === modelData.key ? root.cAccent : root.cTextSecondary
-                                            font.pixelSize: 11
-                                            font.weight: Config.screenMode === modelData.key ? Font.DemiBold : Font.Normal
-                                        }
-
-                                        MouseArea {
-                                            id: modeHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Config.setVal("screenMode", modelData.key)
-                                        }
-                                    }
-                                }
-                            }
+                        ChoiceRow {
+                            title: "显示在"
+                            segWidth: 76
+                            options: [
+                                { key: "all", label: "所有显示器" },
+                                { key: "primary", label: "主显示器" },
+                                { key: "custom", label: "指定显示器" }
+                            ]
+                            current: Config.screenMode
+                            onPicked: key => Config.setVal("screenMode", key)
                         }
-                    }
-
-                    // 4. 当选择“指定屏幕”时展示当前连接的屏幕列表供选择
-                    Rectangle {
-                        width: parent.width
-                        height: scrFlow.height + 36
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-                        visible: !Config.perScreenConfig && Config.screenMode === "custom"
-
-                        Column {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 8
-
-                            Text {
-                                text: "选择目标屏幕："
-                                color: root.cTextPrimary
-                                font.pixelSize: 12
-                                font.weight: Font.Medium
-                            }
-
-                            Flow {
-                                id: scrFlow
-                                width: parent.width
-                                spacing: 6
-
-                                Repeater {
-                                    model: Quickshell.screens
-
-                                    Rectangle {
-                                        required property var modelData
-                                        required property int index
-                                        width: Math.max(90, scrText.implicitWidth + 24)
-                                        height: 28
-                                        radius: 6
-                                        color: Config.targetScreen === modelData.name
-                                            ? root.cAccentBg
-                                            : (scrHover.containsMouse ? root.cChipHover : root.cChipBg)
-                                        border.width: 1
-                                        border.color: Config.targetScreen === modelData.name ? root.cAccentBorder : root.cChipBorder
-
-                                        Text {
-                                            id: scrText
-                                            anchors.centerIn: parent
-                                            text: (modelData.name || ("屏幕 " + index)) + (index === 0 ? " (主)" : "")
-                                            color: Config.targetScreen === modelData.name ? root.cAccent : root.cTextSecondary
-                                            font.pixelSize: 11
-                                        }
-
-                                        MouseArea {
-                                            id: scrHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Config.setVal("targetScreen", modelData.name)
-                                        }
-                                    }
-                                }
-                            }
+                        Divider { visible: Config.screenMode === "custom" }
+                        ChoiceRow {
+                            visible: Config.screenMode === "custom"
+                            title: "显示器"
+                            segWidth: 96
+                            options: root.screenOptions
+                            current: Config.targetScreen
+                            onPicked: key => Config.setVal("targetScreen", key)
                         }
                     }
                 }
 
-                // ==================== TAB 1: 尺寸与间距 ====================
+                // ==================== 大小 ====================
                 Column {
                     width: parent.width
-                    spacing: 10
+                    spacing: 14
                     visible: root.currentTab === 1
 
-                    // Bento Card 1: 图标与留白
-                    Rectangle {
-                        width: parent.width
-                        height: t1Group1.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
+                    Group {
+                        ChoiceRow {
+                            title: "大小"
+                            segWidth: 44
+                            options: [
+                                { key: 32, label: "小" },
+                                { key: 44, label: "中" },
+                                { key: 56, label: "大" },
+                                { key: 72, label: "特大" }
+                            ]
+                            current: root.getVal("iconSize")
+                            onPicked: key => root.setVal("iconSize", key)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "图标大小"
+                            desc: "也可以拖动 Dock 上的分隔线调整，双击还原"
+                            min: 24; max: 96; step: 1
+                            value: root.getVal("iconSize"); unit: " px"
+                            onModified: val => root.setVal("iconSize", Math.round(val))
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "图标内边距"
+                            min: 0; max: 8; step: 1
+                            value: root.getVal("cellPadding"); unit: " px"
+                            onModified: val => root.setVal("cellPadding", Math.round(val))
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "图标间距"
+                            min: 0; max: 16; step: 1
+                            value: root.getVal("spacing"); unit: " px"
+                            onModified: val => root.setVal("spacing", Math.round(val))
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "底板内边距"
+                            min: 2; max: 14; step: 1
+                            value: root.getVal("dockPadding"); unit: " px"
+                            onModified: val => root.setVal("dockPadding", Math.round(val))
+                        }
+                    }
 
-                        Column {
-                            id: t1Group1
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
+                    Group {
+                        Item {
+                            width: parent.width
+                            height: 44
 
-                            // 快速尺寸预设
-                            Item {
-                                width: parent.width
-                                height: 38
+                            Text {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "底板颜色"
+                                color: root.cTextPrimary
+                                font.pixelSize: 13
+                            }
 
-                                Text {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: "快速尺寸预设"
-                                    color: root.cTextPrimary
-                                    font.pixelSize: 12
-                                    font.weight: Font.Medium
-                                }
+                            Row {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 3
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 12
 
-                                Row {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 6
+                                Repeater {
+                                    model: ["#f6f6f6", "#d4d4d6", "#3a3a3c", "#1e1e1e", "#000000"]
 
-                                    readonly property var presets: [
-                                        { size: 32, label: "小 (32px)" },
-                                        { size: 44, label: "标准 (44px)" },
-                                        { size: 56, label: "大 (56px)" },
-                                        { size: 72, label: "超大 (72px)" }
-                                    ]
-
-                                    Repeater {
-                                        model: parent.presets
+                                    Rectangle {
+                                        required property string modelData
+                                        readonly property bool selected: Qt.colorEqual(root.getVal("backgroundColor"), modelData)
+                                        width: 20
+                                        height: 20
+                                        radius: 10
+                                        color: modelData
+                                        border.width: 1
+                                        border.color: root.isLight ? Qt.rgba(0, 0, 0, 0.15) : Qt.rgba(1, 1, 1, 0.2)
 
                                         Rectangle {
-                                            required property var modelData
-                                            width: 72
-                                            height: 26
-                                            radius: 6
-                                            color: root.getVal("iconSize") === modelData.size
-                                                ? root.cAccentBg
-                                                : (preHover.containsMouse ? root.cChipHover : root.cChipBg)
-                                            border.width: 1
-                                            border.color: root.getVal("iconSize") === modelData.size ? root.cAccentBorder : root.cChipBorder
+                                            anchors.centerIn: parent
+                                            width: parent.width + 6
+                                            height: width
+                                            radius: width / 2
+                                            color: "transparent"
+                                            border.width: 2
+                                            border.color: root.cAccent
+                                            visible: parent.selected
+                                        }
 
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData.label
-                                                color: root.getVal("iconSize") === modelData.size ? root.cAccent : root.cTextSecondary
-                                                font.pixelSize: 11
-                                                font.weight: root.getVal("iconSize") === modelData.size ? Font.DemiBold : Font.Normal
-                                            }
-
-                                            MouseArea {
-                                                id: preHover
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: root.setVal("iconSize", modelData.size)
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            anchors.margins: -3
+                                            onClicked: {
+                                                const scr = Config.perScreenConfig ? root.selectedScreen : null;
+                                                if (Config.isLightColor(parent.modelData)) Config.applyLightPreset(scr);
+                                                else Config.applyDarkPreset(scr);
+                                                root.setVal("backgroundColor", parent.modelData);
                                             }
                                         }
                                     }
                                 }
                             }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "Dock 图标与整体大小"
-                                desc: "单个图标基础尺寸，底板与所有元素随之等比缩放"
-                                min: 24; max: 96; step: 1
-                                value: root.getVal("iconSize"); unit: " px"
-                                onModified: val => root.setVal("iconSize", Math.round(val))
-                            }
-
-                            Item {
-                                width: parent.width
-                                height: 22
-
-                                Text {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    text: "💡 快捷拖拽：在 Dock 分割线上按住鼠标上下拖移即可直接调整大小，双击复位默认 (44px)。"
-                                    color: root.cTextMuted
-                                    font.pixelSize: 10
-                                }
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "单元格内边距"
-                                desc: "图标与悬浮高亮边框的间距"
-                                min: 0; max: 8; step: 1
-                                value: root.getVal("cellPadding"); unit: " px"
-                                onModified: val => root.setVal("cellPadding", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "图标间隙"
-                                desc: "相邻应用图标之间的间距"
-                                min: 0; max: 16; step: 1
-                                value: root.getVal("spacing"); unit: " px"
-                                onModified: val => root.setVal("spacing", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "Dock 底板内边距"
-                                desc: "底板外边缘到图标之间的留白"
-                                min: 2; max: 14; step: 1
-                                value: root.getVal("dockPadding"); unit: " px"
-                                onModified: val => root.setVal("dockPadding", Math.round(val))
-                            }
                         }
-                    }
-
-                    // Bento Card 2: 底板外观与晶莹度
-                    Rectangle {
-                        width: parent.width
-                        height: t1Group2.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Column {
-                            id: t1Group2
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SliderRow {
-                                title: "底板圆角半径"
-                                desc: "Dock 两端及顶部的圆角大小"
-                                min: 4; max: 26; step: 1
-                                value: root.getVal("radius"); unit: " px"
-                                onModified: val => root.setVal("radius", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "底板不透明度"
-                                desc: "半透明毛玻璃背景的实心程度"
-                                min: 0.1; max: 1.0; step: 0.05
-                                value: root.getVal("backgroundOpacity")
-                                unit: "%"
-                                onModified: val => root.setVal("backgroundOpacity", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "高精度边框粗细"
-                                desc: "Dock 外轮廓单路径描边线条粗细"
-                                min: 0; max: 3; step: 0.5
-                                value: root.getVal("borderWidth"); unit: " px"
-                                onModified: val => root.setVal("borderWidth", val)
-                            }
+                        Divider {}
+                        SliderRow {
+                            title: "不透明度"
+                            min: 0.1; max: 1.0; step: 0.05; percent: true
+                            value: root.getVal("backgroundOpacity")
+                            onModified: val => root.setVal("backgroundOpacity", val)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "圆角"
+                            min: 4; max: 26; step: 1
+                            value: root.getVal("radius"); unit: " px"
+                            onModified: val => root.setVal("radius", Math.round(val))
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "描边粗细"
+                            min: 0; max: 3; step: 0.5
+                            value: root.getVal("borderWidth"); unit: " px"
+                            onModified: val => root.setVal("borderWidth", val)
                         }
                     }
                 }
 
-                // ==================== TAB 2: 自动隐藏 ====================
+                // ==================== 自动隐藏 ====================
                 Column {
                     width: parent.width
-                    spacing: 10
+                    spacing: 14
                     visible: root.currentTab === 2
 
-                    // Bento Card 1: 隐藏策略
-                    Rectangle {
-                        width: parent.width
-                        height: t2Group1.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Column {
-                            id: t2Group1
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SwitchRow {
-                                title: "自动隐藏 Dock"
-                                desc: "不使用时向屏幕边缘滑动收起"
-                                checked: root.getVal("autoHide")
-                                onToggled: val => root.setVal("autoHide", val)
-                            }
+                    Group {
+                        SwitchRow {
+                            title: "自动隐藏和显示 Dock"
+                            checked: root.getVal("autoHide")
+                            onToggled: val => root.setVal("autoHide", val)
                         }
                     }
 
-                    // Bento Card 2: 露出微条与召唤
-                    Rectangle {
-                        width: parent.width
-                        height: t2Group2.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Column {
-                            id: t2Group2
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SliderRow {
-                                title: "隐藏露出高度 (Peek)"
-                                desc: "收起后露在屏幕边缘的细条高度"
-                                min: 0; max: 32; step: 2
-                                value: root.getVal("peekHeight"); unit: " px"
-                                onModified: val => root.setVal("peekHeight", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "隐藏细条不透明度"
-                                desc: "收起细条的可见度 (设为 0 完全隐形)"
-                                min: 0.0; max: 1.0; step: 0.05
-                                value: root.getVal("peekOpacity"); unit: ""
-                                onModified: val => root.setVal("peekOpacity", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "感应召唤区高度"
-                                desc: "鼠标移动至屏幕边缘唤醒 Dock 的感应高度"
-                                min: 4; max: 24; step: 2
-                                value: root.getVal("triggerHeight"); unit: " px"
-                                onModified: val => root.setVal("triggerHeight", Math.round(val))
-                            }
+                    Group {
+                        SliderRow {
+                            title: "隐藏后保留的高度"
+                            min: 0; max: 32; step: 2
+                            value: root.getVal("peekHeight"); unit: " px"
+                            onModified: val => root.setVal("peekHeight", Math.round(val))
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "隐藏后的不透明度"
+                            desc: "设为 0 则完全隐藏"
+                            min: 0.0; max: 1.0; step: 0.05; percent: true
+                            value: root.getVal("peekOpacity")
+                            onModified: val => root.setVal("peekOpacity", val)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "唤出区域高度"
+                            desc: "鼠标距屏幕边缘多近时显示 Dock"
+                            min: 4; max: 24; step: 2
+                            value: root.getVal("triggerHeight"); unit: " px"
+                            onModified: val => root.setVal("triggerHeight", Math.round(val))
                         }
                     }
 
-                    // Bento Card 3: 动效时机
-                    Rectangle {
-                        width: parent.width
-                        height: t2Group3.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Column {
-                            id: t2Group3
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SliderRow {
-                                title: "离开隐藏延迟"
-                                desc: "鼠标移开后等待收起的停留时间"
-                                min: 100; max: 1000; step: 50
-                                value: root.getVal("hideDelay"); unit: " ms"
-                                onModified: val => root.setVal("hideDelay", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "滑动动画时长"
-                                desc: "弹出与收起动画的平滑耗时"
-                                min: 50; max: 300; step: 25
-                                value: root.getVal("slideDuration"); unit: " ms"
-                                onModified: val => root.setVal("slideDuration", Math.round(val))
-                            }
+                    Group {
+                        SliderRow {
+                            title: "隐藏延迟"
+                            min: 100; max: 1000; step: 50
+                            value: root.getVal("hideDelay"); unit: " ms"
+                            onModified: val => root.setVal("hideDelay", Math.round(val))
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "动画时长"
+                            min: 50; max: 300; step: 25
+                            value: root.getVal("slideDuration"); unit: " ms"
+                            onModified: val => root.setVal("slideDuration", Math.round(val))
                         }
                     }
                 }
 
-                // ==================== TAB 3: 动效与交互 ====================
+                // ==================== 效果 ====================
                 Column {
                     width: parent.width
-                    spacing: 10
+                    spacing: 14
                     visible: root.currentTab === 3
 
-                    // Bento Card 1: 鼠标悬停波浪放大
-                    Rectangle {
-                        width: parent.width
-                        height: t3Group1.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Column {
-                            id: t3Group1
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SwitchRow {
-                                title: "macOS 风格悬停放大"
-                                desc: "鼠标悬停在图标上时带有回弹放大动画"
-                                checked: root.getVal("hoverMagnify")
-                                onToggled: val => root.setVal("hoverMagnify", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "悬停放大倍率"
-                                desc: "波浪鱼眼放大中心的最高缩放比例"
-                                min: 1.05; max: 1.8; step: 0.02
-                                value: root.getVal("hoverScale"); unit: "x"
-                                onModified: val => root.setVal("hoverScale", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "波浪影响范围 (Wave Spread)"
-                                desc: "连续抛物线扩散影响的相邻图标数量"
-                                min: 1.2; max: 3.5; step: 0.1
-                                value: root.getVal("waveSpread"); unit: " 单元"
-                                onModified: val => root.setVal("waveSpread", val)
-                            }
+                    Group {
+                        SwitchRow {
+                            title: "放大"
+                            checked: root.getVal("hoverMagnify")
+                            onToggled: val => root.setVal("hoverMagnify", val)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "放大倍率"
+                            min: 1.05; max: 1.8; step: 0.02
+                            value: root.getVal("hoverScale"); unit: "×"
+                            onModified: val => root.setVal("hoverScale", val)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "放大范围"
+                            desc: "受影响的相邻图标数量"
+                            min: 1.2; max: 3.5; step: 0.1
+                            value: root.getVal("waveSpread")
+                            onModified: val => root.setVal("waveSpread", val)
                         }
                     }
 
-                    // Bento Card 2: 视效与增强行为
-                    Rectangle {
-                        width: parent.width
-                        height: t3Group2.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
+                    Group {
+                        SwitchRow {
+                            title: "启动时弹跳"
+                            checked: root.getVal("bounceOnLaunch")
+                            onToggled: val => root.setVal("bounceOnLaunch", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "圆形图标"
+                            desc: "将所有图标统一为圆形"
+                            checked: root.getVal("circularIcons")
+                            onToggled: val => root.setVal("circularIcons", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "顶部高光"
+                            checked: root.getVal("glassHighlight")
+                            onToggled: val => root.setVal("glassHighlight", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "阴影"
+                            checked: root.getVal("shadowEnabled")
+                            onToggled: val => root.setVal("shadowEnabled", val)
+                        }
+                    }
 
-                        Column {
-                            id: t3Group2
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SwitchRow {
-                                title: "点击启动跳跃动效"
-                                desc: "点击应用图标时呈现 macOS 标志性上下跳跃反馈"
-                                checked: root.getVal("bounceOnLaunch")
-                                onToggled: val => root.setVal("bounceOnLaunch", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "顶部微光反射条"
-                                desc: "Dock 顶边缘呈现 Apple 晶莹质感的 1px 细微高光反光"
-                                checked: root.getVal("glassHighlight")
-                                onToggled: val => root.setVal("glassHighlight", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "柔和环境投影 (Shadow)"
-                                desc: "浮动状态下底板四周呈现弥散环境深色柔光投影"
-                                checked: root.getVal("shadowEnabled")
-                                onToggled: val => root.setVal("shadowEnabled", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "显示废纸篓 (Trash)"
-                                desc: "在右侧控制区展示 macOS 废纸篓快捷入口与右键清空操作"
-                                checked: root.getVal("showTrash")
-                                onToggled: val => root.setVal("showTrash", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "底边反向平滑过渡角"
-                                desc: "Dock 贴底时两侧自然向外扩出融入底边"
-                                checked: root.getVal("edgeCorners")
-                                onToggled: val => root.setVal("edgeCorners", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "反向角外扩弧度"
-                                desc: "两侧反向圆角的大小"
-                                min: 4; max: 24; step: 2
-                                value: root.getVal("cornerSize"); unit: " px"
-                                onModified: val => root.setVal("cornerSize", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "独占屏幕空间 (Reserve Space)"
-                                desc: "开启后最大化窗口将自动避让 Dock"
-                                checked: root.getVal("reserveSpace")
-                                onToggled: val => root.setVal("reserveSpace", val)
-                            }
+                    Group {
+                        SwitchRow {
+                            title: "贴边圆角"
+                            desc: "Dock 贴边时两端向外过渡"
+                            checked: root.getVal("edgeCorners")
+                            onToggled: val => root.setVal("edgeCorners", val)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "贴边圆角大小"
+                            min: 4; max: 24; step: 2
+                            value: root.getVal("cornerSize"); unit: " px"
+                            onModified: val => root.setVal("cornerSize", Math.round(val))
                         }
                     }
                 }
 
-                // ==================== TAB 4: 运行与来源 ====================
+                // ==================== 行为 ====================
                 Column {
                     width: parent.width
-                    spacing: 10
+                    spacing: 14
                     visible: root.currentTab === 4
 
-                    // Bento Card 1: 运行与指示点
-                    Rectangle {
-                        width: parent.width
-                        height: t4Group1.height + 20
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
-
-                        Column {
-                            id: t4Group1
-                            anchors.top: parent.top
-                            anchors.topMargin: 10
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 2
-
-                            SwitchRow {
-                                title: "显示运行中的应用"
-                                desc: "未加入收藏但正在运行的应用也会动态显示在 Dock 上"
-                                checked: root.getVal("showRunningApps")
-                                onToggled: val => root.setVal("showRunningApps", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "运行状态指示点"
-                                desc: "图标下方居中显示 macOS 风格晶莹圆点"
-                                checked: root.getVal("runningIndicator")
-                                onToggled: val => root.setVal("runningIndicator", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SliderRow {
-                                title: "指示点上限数量"
-                                desc: "防止一个应用开过多窗口把图标遮满"
-                                min: 1; max: 5; step: 1
-                                value: root.getVal("indicatorMaxDots"); unit: " 个"
-                                onModified: val => root.setVal("indicatorMaxDots", Math.round(val))
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "点击唤醒与轮转窗口"
-                                desc: "点击运行中应用激活窗口，多窗口连续点击切换"
-                                checked: root.getVal("raiseRunning")
-                                onToggled: val => root.setVal("raiseRunning", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "单窗口点击最小化"
-                                desc: "仅打开一个窗口时，点击已激活的图标可将其最小化"
-                                checked: root.getVal("minimizeActive")
-                                onToggled: val => root.setVal("minimizeActive", val)
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            SwitchRow {
-                                title: "悬停显示 “+” 新开按钮"
-                                desc: "悬停在已运行应用上方时浮现新建窗口按钮"
-                                checked: root.getVal("newInstanceButton")
-                                onToggled: val => root.setVal("newInstanceButton", val)
-                            }
+                    Group {
+                        ChoiceRow {
+                            title: "固定项来源"
+                            segWidth: 92
+                            options: [
+                                { key: "kickoff", label: "Kickoff 收藏" },
+                                { key: "taskmanager", label: "任务栏固定项" }
+                            ]
+                            current: root.getVal("source")
+                            onPicked: key => root.setVal("source", key)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "显示未固定的运行中应用"
+                            checked: root.getVal("showRunningApps")
+                            onToggled: val => root.setVal("showRunningApps", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "显示废纸篓"
+                            checked: root.getVal("showTrash")
+                            onToggled: val => root.setVal("showTrash", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "为 Dock 预留空间"
+                            desc: "最大化的窗口不会覆盖 Dock"
+                            checked: root.getVal("reserveSpace")
+                            onToggled: val => root.setVal("reserveSpace", val)
                         }
                     }
 
-                    // Bento Card 2: 数据源与底板主题色
-                    Rectangle {
-                        width: parent.width
-                        height: t4Group2.height + 24
-                        radius: 12
-                        color: root.cGroupBg
-                        border.width: 1
-                        border.color: root.cGroupBorder
+                    Group {
+                        SwitchRow {
+                            title: "显示运行指示点"
+                            checked: root.getVal("runningIndicator")
+                            onToggled: val => root.setVal("runningIndicator", val)
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "指示点最多显示"
+                            min: 1; max: 5; step: 1
+                            value: root.getVal("indicatorMaxDots"); unit: " 个"
+                            onModified: val => root.setVal("indicatorMaxDots", Math.round(val))
+                        }
+                    }
 
-                        Column {
-                            id: t4Group2
-                            anchors.top: parent.top
-                            anchors.topMargin: 12
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.right: parent.right
-                            anchors.rightMargin: 14
-                            spacing: 10
-
-                            // Source Selector
-                            Item {
-                                width: parent.width
-                                height: 46
-
-                                Column {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 2
-                                    Text {
-                                        text: "启动器数据源"
-                                        color: root.cTextPrimary
-                                        font.pixelSize: 13
-                                        font.weight: Font.Medium
-                                    }
-                                    Text {
-                                        text: "读取 Kickoff 收藏或任务栏固定项"
-                                        color: root.cTextSecondary
-                                        font.pixelSize: 11
-                                    }
-                                }
-
-                                Row {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 6
-
-                                    Rectangle {
-                                        width: 92
-                                        height: 28
-                                        radius: 6
-                                        color: root.getVal("source") === "kickoff"
-                                            ? root.cAccentBg
-                                            : (kickHover.containsMouse ? root.cChipHover : root.cChipBg)
-                                        border.width: 1
-                                        border.color: root.getVal("source") === "kickoff" ? root.cAccentBorder : root.cChipBorder
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Kickoff 收藏"
-                                            color: root.getVal("source") === "kickoff" ? root.cAccent : root.cTextSecondary
-                                            font.pixelSize: 11
-                                            font.weight: root.getVal("source") === "kickoff" ? Font.DemiBold : Font.Normal
-                                        }
-                                        MouseArea {
-                                            id: kickHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.setVal("source", "kickoff")
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        width: 92
-                                        height: 28
-                                        radius: 6
-                                        color: root.getVal("source") === "taskmanager"
-                                            ? root.cAccentBg
-                                            : (taskHover.containsMouse ? root.cChipHover : root.cChipBg)
-                                        border.width: 1
-                                        border.color: root.getVal("source") === "taskmanager" ? root.cAccentBorder : root.cChipBorder
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "任务栏固定"
-                                            color: root.getVal("source") === "taskmanager" ? root.cAccent : root.cTextSecondary
-                                            font.pixelSize: 11
-                                            font.weight: root.getVal("source") === "taskmanager" ? Font.DemiBold : Font.Normal
-                                        }
-                                        MouseArea {
-                                            id: taskHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.setVal("source", "taskmanager")
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rectangle { width: parent.width; height: 1; color: root.cDivider }
-
-                            // Background Theme Color Palette
-                            Item {
-                                width: parent.width
-                                height: 46
-
-                                Column {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 2
-                                    Text {
-                                        text: "底板预设主题色"
-                                        color: root.cTextPrimary
-                                        font.pixelSize: 13
-                                        font.weight: Font.Medium
-                                    }
-                                    Text {
-                                        text: "点击切换实时质感与亮暗模式"
-                                        color: root.cTextSecondary
-                                        font.pixelSize: 11
-                                    }
-                                }
-
-                                Row {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 8
-
-                                    readonly property var colors: [
-                                        { hex: "#ffffff", name: "亮色毛玻璃" },
-                                        { hex: "#20242c", name: "macOS 深灰" },
-                                        { hex: "#1c1f26", name: "经典黑" },
-                                        { hex: "#161922", name: "深海蓝" },
-                                        { hex: "#0d1117", name: "曜石黑" },
-                                        { hex: "#252834", name: "玄铁灰" }
-                                    ]
-
-                                    Repeater {
-                                        model: parent.colors
-
-                                        Rectangle {
-                                            required property var modelData
-                                            width: 26
-                                            height: 26
-                                            radius: 13
-                                            color: modelData.hex
-                                            border.width: root.getVal("backgroundColor") == modelData.hex ? 2.5 : 1
-                                            border.color: root.getVal("backgroundColor") == modelData.hex ? root.cAccent : root.cChipBorder
-
-                                            scale: cMouse.containsMouse ? 1.15 : 1.0
-                                            Behavior on scale { NumberAnimation { duration: 120 } }
-
-                                            MouseArea {
-                                                id: cMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (modelData.hex === "#ffffff") {
-                                                        Config.applyLightPreset(Config.perScreenConfig ? root.selectedScreen : null);
-                                                    } else {
-                                                        root.setVal("backgroundColor", modelData.hex);
-                                                        if (root.getVal("indicatorColor") === "#70334155") {
-                                                            root.setVal("indicatorColor", "#b8ffffff");
-                                                            root.setVal("indicatorActiveColor", "#ffffff");
-                                                            root.setVal("border", "#30ffffff");
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                    Group {
+                        SwitchRow {
+                            title: "点击切换窗口"
+                            desc: "有多个窗口时，重复点击依次切换"
+                            checked: root.getVal("raiseRunning")
+                            onToggled: val => root.setVal("raiseRunning", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "点击当前窗口时最小化"
+                            desc: "仅在应用只有一个窗口时生效"
+                            checked: root.getVal("minimizeActive")
+                            onToggled: val => root.setVal("minimizeActive", val)
+                        }
+                        Divider {}
+                        SwitchRow {
+                            title: "悬停时显示新建窗口按钮"
+                            checked: root.getVal("newInstanceButton")
+                            onToggled: val => root.setVal("newInstanceButton", val)
                         }
                     }
                 }

@@ -150,14 +150,40 @@ Singleton {
         return list;
     }
 
+    // Revision tracker bumped on any window state/activation change
+    property int revision: 0
+
+    function isWindowActive(modelIndex) {
+        if (!modelIndex || !modelIndex.valid) return false;
+        try {
+            return tasks.data(modelIndex, root.roleIsActive) === true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function isWindowMinimized(modelIndex) {
+        if (!modelIndex || !modelIndex.valid) return false;
+        try {
+            return tasks.data(modelIndex, root.roleIsMinimized) === true;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function activateWindow(modelIndex) {
-        return root.raise(modelIndex);
+        const res = root.raise(modelIndex);
+        root.revision++;
+        rebuildTimer.restart();
+        return res;
     }
 
     function closeWindow(modelIndex) {
         if (!modelIndex || !modelIndex.valid) return false;
         try {
             tasks.requestClose(modelIndex);
+            root.revision++;
+            rebuildTimer.restart();
             return true;
         } catch (e) {
             console.warn("Tasks: requestClose failed:", e);
@@ -324,7 +350,7 @@ Singleton {
             rec.active = rec.active || tasks.data(row, root.roleIsActive) === true;
         }
 
-        const parts = [];
+        const parts = [String(tasks.activeTask)];
         for (const key of Object.keys(apps).sort()) {
             const rec = apps[key];
             parts.push(key + ":" + rec.row + ":" + rec.windows + ":" + rec.active);
@@ -335,6 +361,7 @@ Singleton {
 
         root.signature = signature;
         root.apps = apps;
+        root.revision++;
     }
 
     Component.onCompleted: rebuild()

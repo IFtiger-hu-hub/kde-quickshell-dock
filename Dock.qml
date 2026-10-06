@@ -43,6 +43,7 @@ PanelWindow {
     readonly property bool glassHighlight: Config.getVal(screenName, "glassHighlight")
     readonly property bool shadowEnabled: Config.getVal(screenName, "shadowEnabled")
     readonly property bool showTrash: Config.getVal(screenName, "showTrash")
+    readonly property bool circularIcons: Config.getVal(screenName, "circularIcons")
     readonly property bool showRunningApps: Config.getVal(screenName, "showRunningApps")
     readonly property bool raiseRunning: Config.getVal(screenName, "raiseRunning")
     readonly property bool minimizeActive: Config.getVal(screenName, "minimizeActive")
@@ -74,11 +75,17 @@ PanelWindow {
     property string expandedAppKey: ""
     readonly property int cardWidth: 230
     readonly property int cardHeight: Math.max(38, cellSize - 6)
+    // Card shelf geometry: shelfGap between the app icon and the first card,
+    // shelfTail after the last card (so the visible gap to the next icon,
+    // tail + list spacing, matches shelfGap). Both are part of the cell.
+    readonly property int shelfGap: 14
+    readonly property int shelfTail: Math.max(4, shelfGap - spacing)
+    function shelfLength(count, cardLen) {
+        return count > 1 ? shelfGap + count * cardLen + (count - 1) * spacing + shelfTail : 0;
+    }
     readonly property int expandedExtraWidth: {
         if (!expandedAppKey) return 0;
-        const count = Tasks.windowCount(expandedAppKey);
-        if (count <= 1) return 0;
-        return count * (cardWidth + spacing) + 14;
+        return shelfLength(Tasks.windowCount(expandedAppKey), isVertical ? cardHeight : cardWidth);
     }
     property real animExpandedExtraWidth: 0
     onExpandedExtraWidthChanged: animExpandedExtraWidth = expandedExtraWidth
@@ -111,33 +118,31 @@ PanelWindow {
 
     readonly property bool isOverflowing: naturalPlateWidth > maxPlateWidth
     readonly property int plateWidth: isOverflowing ? maxPlateWidth : naturalPlateWidth
+    onIsOverflowingChanged: Qt.callLater(scrollListBy, 0)
 
     readonly property int availableAppsWidth: Math.max(cellSize, plateWidth - dockPadding * 2 - (appsWidth > 0 ? rightSectionWidth : (trashWidth + trashGap + cellSize)))
 
+    // Move the overflowing icon list by `d` px along the dock axis, clamped to the
+    // ListView's real extents (origin can be non-zero). scrollListBy(0) re-clamps.
+    function scrollListBy(d) {
+        if (!isOverflowing) {
+            list.smoothScroll = true;
+            list.scrollGoal = list.scrollMin;
+            return;
+        }
+        list.scrollGoal = Math.max(list.scrollMin, Math.min(list.scrollMax, list.scrollGoal + d));
+    }
+
     function ensureCellVisible(c) {
         if (!isOverflowing || !c) return;
-        if (isVertical) {
-            const cellTop = c.y;
-            const cellBottom = c.y + c.height;
-            const viewTop = list.targetContentY;
-            const viewBottom = list.targetContentY + list.height;
-            if (cellTop < viewTop) {
-                list.targetContentY = Math.max(0, cellTop - 10);
-            } else if (cellBottom > viewBottom) {
-                const maxScroll = Math.max(0, list.contentHeight - list.height);
-                list.targetContentY = Math.min(maxScroll, cellBottom - list.height + 10);
-            }
-        } else {
-            const cellLeft = c.x;
-            const cellRight = c.x + c.width;
-            const viewLeft = list.targetContentX;
-            const viewRight = list.targetContentX + list.width;
-            if (cellLeft < viewLeft) {
-                list.targetContentX = Math.max(0, cellLeft - 10);
-            } else if (cellRight > viewRight) {
-                const maxScroll = Math.max(0, list.contentWidth - list.width);
-                list.targetContentX = Math.min(maxScroll, cellRight - list.width + 10);
-            }
+        const start = isVertical ? c.y : c.x;
+        const end = start + (isVertical ? c.height : c.width);
+        const viewSize = isVertical ? list.height : list.width;
+        list.smoothScroll = true;
+        if (start < list.scrollGoal) {
+            scrollListBy(start - 10 - list.scrollGoal);
+        } else if (end > list.scrollGoal + viewSize) {
+            scrollListBy(end - viewSize + 10 - list.scrollGoal);
         }
     }
 
@@ -430,9 +435,10 @@ PanelWindow {
         }
     }
 
-    // Hardware-accelerated background blur via KWin
+    // Background blur via KWin, rounded to the plate so no square corners show
     BackgroundEffect.blurRegion: Region {
         item: plate
+        radius: dock.radius
     }
 
     WlrLayershell.namespace: "quickshell-dock"
@@ -571,8 +577,8 @@ PanelWindow {
                 anchors.fill: parent
                 radius: dock.radius
                 offset: Qt.vector2d(isLeft ? 4 : isRight ? -4 : 0, isBottom ? 5 : isTop ? -5 : 0)
-                color: dock.isLight ? "#35000000" : "#50000000"
-                blur: dock.isLight ? 22 : 16
+                color: dock.isLight ? "#1f000000" : "#40000000"
+                blur: 24
                 spread: 0
                 visible: dock.shadowEnabled && (!dock.cornersActive || dock.gap > 0)
                 z: -1
@@ -588,7 +594,17 @@ PanelWindow {
                 border.color: dock.border
                 border.width: dock.borderWidth
 
-                // Top 1px Specular Highlight Shelf (Signature macOS Glass Reflection)
+                // Outer hairline that separates the plate from busy wallpapers
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -1
+                    radius: parent.radius + 1
+                    color: "transparent"
+                    border.width: 1
+                    border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(0, 0, 0, 0.45)
+                }
+
+                // Optional 1px top highlight (off by default)
                 Rectangle {
                     id: topSpecular
                     anchors.top: parent.top
@@ -634,315 +650,391 @@ PanelWindow {
             width: isVertical ? dock.cellSize : (dock.plateWidth - dock.dockPadding * 2)
             height: isVertical ? (dock.plateWidth - dock.dockPadding * 2) : dock.cellSize
 
-            // Mouse wheel listener to scroll horizontally across dock icons when overflowing
+            // Mouse wheel / touchpad listener to scroll across dock icons when overflowing
             WheelHandler {
                 id: dockWheelHandler
-                target: contentRow
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 onWheel: event => {
                     if (!dock.isOverflowing) return;
-                    const delta = event.angleDelta.y !== 0 ? event.angleDelta.y : event.angleDelta.x;
-                    const step = 90;
-                    if (dock.isVertical) {
-                        const maxScrollY = Math.max(0, list.contentHeight - list.height);
-                        list.targetContentY = Math.max(0, Math.min(maxScrollY, list.targetContentY + (delta > 0 ? -step : step)));
-                    } else {
-                        const maxScrollX = Math.max(0, list.contentWidth - list.width);
-                        list.targetContentX = Math.max(0, Math.min(maxScrollX, list.targetContentX + (delta > 0 ? -step : step)));
-                    }
+                    // Touchpads report pixelDelta: follow the fingers 1:1 without easing.
+                    // Wheels report angleDelta in 1/8 degrees (120 per notch): ~90px per notch.
+                    const usePixels = event.pixelDelta.x !== 0 || event.pixelDelta.y !== 0;
+                    const dx = usePixels ? event.pixelDelta.x : event.angleDelta.x * 0.75;
+                    const dy = usePixels ? event.pixelDelta.y : event.angleDelta.y * 0.75;
+                    // Use the dominant axis only. Taking y whenever it was non-zero let
+                    // small cross-axis jitter at the end of a swipe flip the direction.
+                    const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+                    if (delta === 0) return;
+                    list.smoothScroll = !usePixels;
+                    dock.scrollListBy(-delta);
                 }
             }
 
-            ListView {
-                id: list
+            // Scroll viewport: clips only along the scroll axis when overflowing.
+            // On the cross axis it is padded by the magnification headroom so hovered icons
+            // can pop out of the plate. On the scroll axis, the viewport strictly confines
+            // icons to [0, list.width] so no scrolled-out items can ever bleed onto the desktop
+            // or past the separator. End icons avoid clipping via adaptive edgeGuard positioning.
+            Item {
+                id: listViewport
 
-                x: 0
-                y: 0
-                width: isVertical ? dock.cellSize : Math.min(dock.appsWidth, dock.availableAppsWidth)
-                height: isVertical ? Math.min(dock.appsWidth, dock.availableAppsWidth) : dock.cellSize
+                readonly property real pad: Math.ceil(dock.iconSize * Math.max(0, dock.hoverScale - 1)) + 24
 
-                orientation: isVertical ? ListView.Vertical : ListView.Horizontal
-                spacing: dock.spacing
-                interactive: false
+                x: isVertical ? -pad : 0
+                y: isVertical ? 0 : -pad
+                width: isVertical ? list.width + pad * 2 : list.width
+                height: isVertical ? list.height : list.height + pad * 2
                 clip: dock.isOverflowing
-                model: orderModel
 
-                property real targetContentX: 0
-                property real targetContentY: 0
+                ListView {
+                    id: list
 
-                contentX: isVertical ? 0 : targetContentX
-                contentY: isVertical ? targetContentY : 0
+                    x: isVertical ? listViewport.pad : 0
+                    y: isVertical ? 0 : listViewport.pad
+                    width: isVertical ? dock.cellSize : Math.min(dock.appsWidth, dock.availableAppsWidth)
+                    height: isVertical ? Math.min(dock.appsWidth, dock.availableAppsWidth) : dock.cellSize
 
-                Behavior on targetContentX {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
-                Behavior on targetContentY {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
+                    orientation: isVertical ? ListView.Vertical : ListView.Horizontal
+                    spacing: dock.spacing
+                    interactive: false
+                    // Clipping is done by listViewport (scroll axis only).
+                    clip: false
+                    model: orderModel
 
-                moveDisplaced: Transition {
-                    NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
-                }
-                displaced: Transition {
-                    NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
-                }
+                    // Keep every delegate alive (a dock holds few items). Otherwise the
+                    // ListView re-estimates its origin while recycling delegates and its
+                    // own bounds fixup can shove the view away from the start.
+                    cacheBuffer: Math.max(320, dock.appsWidth)
+                    boundsBehavior: Flickable.StopAtBounds
 
-                delegate: Item {
-                    id: cell
+                    // scrollGoal is the logical target (never animated, safe to read and
+                    // accumulate); scrollPos eases towards it for wheel notches only.
+                    property real scrollGoal: 0
+                    property bool smoothScroll: true
+                    property real scrollPos: scrollGoal
+                    readonly property real scrollMin: isVertical ? originY : originX
+                    readonly property real scrollMax: scrollMin + Math.max(0, isVertical ? (contentHeight - height) : (contentWidth - width))
 
-                    required property int index
-                    required property string appId
+                    contentX: isVertical ? 0 : scrollPos
+                    contentY: isVertical ? scrollPos : 0
 
-                    readonly property var entry: dock.entryMap[appId] ?? Tasks.resolveEntry(appId) ?? null
-                    readonly property string taskKey: Tasks.key(entry ? entry.id : appId)
-                    readonly property int windows: Tasks.windowCount(taskKey)
-                    readonly property bool active: Tasks.isActive(taskKey)
-                    readonly property bool running: windows > 0
-
-                    readonly property bool isExpanded: dock.expandedAppKey === cell.taskKey && cell.windows > 1
-                    readonly property var windowList: isExpanded ? Tasks.getWindows(cell.taskKey) : []
-
-                    readonly property int targetWidth: isVertical
-                        ? dock.cellSize
-                        : (dock.cellSize + (isExpanded ? (windowList.length * (dock.cardWidth + dock.spacing)) : 0))
-                    readonly property int targetHeight: isVertical
-                        ? (dock.cellSize + (isExpanded ? (windowList.length * (dock.cardHeight + dock.spacing)) : 0))
-                        : dock.cellSize
-
-                    width: targetWidth
-                    height: targetHeight
-
-                    Behavior on width {
-                        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                    }
-                    Behavior on height {
-                        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                    Behavior on scrollPos {
+                        enabled: list.smoothScroll
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
 
-                    property int dragIndex: index
+                    // Re-clamp when items are added/removed or the dock resizes.
+                    onScrollMinChanged: dock.scrollListBy(0)
+                    onScrollMaxChanged: dock.scrollListBy(0)
 
-                    // Parabolic Wave Geometry relative to contentRow, centered on main icon
-                    readonly property real cellCenterPos: isVertical
-                        ? (cell.y - list.contentY + dock.cellSize / 2)
-                        : (cell.x - list.contentX + dock.cellSize / 2)
-
-                    readonly property real waveDistance: Math.abs(dock.pointerPos - cellCenterPos)
-                    readonly property real waveInfluence: dock.cellSize * dock.waveSpread
-                    readonly property real waveFactor: (dock.pointerInside && waveDistance < waveInfluence && dock.hoverMagnify && !dragArea.drag.active)
-                        ? 0.5 * (1 + Math.cos(Math.PI * waveDistance / waveInfluence))
-                        : 0
-
-                    readonly property real targetScale: isExpanded
-                        ? (1.0 + waveFactor * 0.10)
-                        : (1.0 + waveFactor * (dock.hoverScale - 1.0))
-                    readonly property real waveLiftY: isBottom
-                        ? -Math.round(waveFactor * (isExpanded ? 3 : 7))
-                        : isTop ? Math.round(waveFactor * (isExpanded ? 3 : 7)) : 0
-                    readonly property real waveLiftX: isRight
-                        ? -Math.round(waveFactor * (isExpanded ? 3 : 7))
-                        : isLeft ? Math.round(waveFactor * (isExpanded ? 3 : 7)) : 0
-
-                    z: Math.round(targetScale * 100)
-
-                    function returnHome() {
-                        content.x = 0;
-                        content.y = 0;
+                    moveDisplaced: Transition {
+                        NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    displaced: Transition {
+                        NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
                     }
 
-                    function publishIconGeometry() {
-                        if (!cell.running) return;
-                        try {
-                            const pt = cell.mapToItem(null, 0, 0);
-                            if (!pt || isNaN(pt.x) || isNaN(pt.y)) return;
-                            const gx = dock.x + pt.x;
-                            const gy = dock.y + pt.y;
-                            if (isNaN(gx) || isNaN(gy)) return;
-                            Tasks.publishGeometry(cell.taskKey, gx, gy, cell.width, cell.height);
-                        } catch (e) {}
-                    }
+                    delegate: Item {
+                        id: cell
 
-                    onXChanged: publishIconGeometry()
-                    onYChanged: publishIconGeometry()
+                        required property int index
+                        required property string appId
 
-                    Connections {
-                        target: cell
-                        function onRunningChanged() {
-                            if (cell.running) Qt.callLater(cell.publishIconGeometry);
+                        readonly property var entry: dock.entryMap[appId] ?? Tasks.resolveEntry(appId) ?? null
+                        readonly property string taskKey: Tasks.key(entry ? entry.id : appId)
+                        readonly property int windows: Tasks.windowCount(taskKey)
+                        readonly property bool active: Tasks.isActive(taskKey)
+                        readonly property bool running: windows > 0
+
+                        readonly property bool isExpanded: dock.expandedAppKey === cell.taskKey && cell.windows > 1
+                        readonly property var windowList: {
+                            Tasks.revision;
+                            return isExpanded ? Tasks.getWindows(cell.taskKey) : [];
                         }
-                        function onActiveChanged() {
-                            if (cell.running) Qt.callLater(cell.publishIconGeometry);
+
+                        readonly property int targetWidth: isVertical
+                            ? dock.cellSize
+                            : (dock.cellSize + (isExpanded ? dock.shelfLength(windowList.length, dock.cardWidth) : 0))
+                        readonly property int targetHeight: isVertical
+                            ? (dock.cellSize + (isExpanded ? dock.shelfLength(windowList.length, dock.cardHeight) : 0))
+                            : dock.cellSize
+
+                        width: targetWidth
+                        height: targetHeight
+
+                        Behavior on width {
+                            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
                         }
-                    }
+                        Behavior on height {
+                            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                        }
 
-                    Component.onCompleted: Qt.callLater(publishIconGeometry)
+                        property int dragIndex: index
 
-                    DropArea {
-                        width: dock.cellSize
-                        height: dock.cellSize
-                        keys: ["quickshell-dock-icon"]
+                        // Parabolic Wave Geometry relative to contentRow, centered on main icon
+                        readonly property real cellCenterPos: isVertical
+                            ? (cell.y - list.contentY + dock.cellSize / 2)
+                            : (cell.x - list.contentX + dock.cellSize / 2)
 
-                        onEntered: drag => {
-                            const from = drag.source.dragIndex;
-                            const to = cell.index;
-                            if (from >= 0 && from !== to) {
-                                orderModel.move(from, to, 1);
+                        readonly property real waveDistance: Math.abs(dock.pointerPos - cellCenterPos)
+                        readonly property real waveInfluence: dock.cellSize * dock.waveSpread
+                        readonly property real waveFactor: (dock.pointerInside && waveDistance < waveInfluence && dock.hoverMagnify && !dragArea.drag.active)
+                            ? 0.5 * (1 + Math.cos(Math.PI * waveDistance / waveInfluence))
+                            : 0
+
+                        readonly property real targetScale: isExpanded
+                            ? (1.0 + waveFactor * 0.10)
+                            : (1.0 + waveFactor * (dock.hoverScale - 1.0))
+
+                        // Edge-guard offset: when an icon magnifies near the start or end of the
+                        // viewport (especially index 0 at scrollMin), smoothly clamp its magnified bounds
+                        // inside [0, list.width] so its circular plate never gets cut off by the clipping box.
+                        readonly property real edgeGuardX: {
+                            if (isVertical || !dock.isOverflowing) return 0;
+                            const halfGrowth = (dock.cellSize * (targetScale - 1.0)) / 2;
+                            const viewLeft = cell.x - list.contentX - halfGrowth;
+                            if (viewLeft < 0) return -viewLeft;
+                            const viewRight = cell.x - list.contentX + dock.cellSize + halfGrowth;
+                            if (viewRight > list.width) return list.width - viewRight;
+                            return 0;
+                        }
+
+                        readonly property real edgeGuardY: {
+                            if (!isVertical || !dock.isOverflowing) return 0;
+                            const halfGrowth = (dock.cellSize * (targetScale - 1.0)) / 2;
+                            const viewTop = cell.y - list.contentY - halfGrowth;
+                            if (viewTop < 0) return -viewTop;
+                            const viewBottom = cell.y - list.contentY + dock.cellSize + halfGrowth;
+                            if (viewBottom > list.height) return list.height - viewBottom;
+                            return 0;
+                        }
+
+                        readonly property real waveLiftY: (isBottom
+                            ? -Math.round(waveFactor * (isExpanded ? 3 : 7))
+                            : isTop ? Math.round(waveFactor * (isExpanded ? 3 : 7)) : 0) + edgeGuardY
+                        readonly property real waveLiftX: (isRight
+                            ? -Math.round(waveFactor * (isExpanded ? 3 : 7))
+                            : isLeft ? Math.round(waveFactor * (isExpanded ? 3 : 7)) : 0) + edgeGuardX
+
+                        z: Math.round(targetScale * 100)
+
+                        // Card shelf avoidance: when the icon right after this shelf is
+                        // magnified, slide the cards back so they keep clear of it.
+                        readonly property real nextIconCenter: cellCenterPos + (isVertical ? cell.height : cell.width) + dock.spacing
+                        readonly property real nextWave: {
+                            if (!isExpanded || index >= list.count - 1 || !dock.pointerInside || !dock.hoverMagnify) return 0;
+                            const d = Math.abs(dock.pointerPos - nextIconCenter);
+                            return d < waveInfluence ? 0.5 * (1 + Math.cos(Math.PI * d / waveInfluence)) : 0;
+                        }
+                        readonly property real shelfAvoidTarget: {
+                            const growth = dock.iconSize * nextWave * (dock.hoverScale - 1) / 2;
+                            const clearance = dock.shelfTail + dock.spacing + dock.cellPadding;
+                            const room = dock.shelfGap + dock.cellPadding - 6;
+                            return Math.max(0, Math.min(room, growth + 8 - clearance));
+                        }
+                        property real shelfAvoid: shelfAvoidTarget
+                        Behavior on shelfAvoid { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+
+                        function returnHome() {
+                            content.x = 0;
+                            content.y = 0;
+                        }
+
+                        function publishIconGeometry() {
+                            if (!cell.running) return;
+                            try {
+                                const pt = cell.mapToItem(null, 0, 0);
+                                if (!pt || isNaN(pt.x) || isNaN(pt.y)) return;
+                                const gx = dock.x + pt.x;
+                                const gy = dock.y + pt.y;
+                                if (isNaN(gx) || isNaN(gy)) return;
+                                Tasks.publishGeometry(cell.taskKey, gx, gy, cell.width, cell.height);
+                            } catch (e) {}
+                        }
+
+                        onXChanged: publishIconGeometry()
+                        onYChanged: publishIconGeometry()
+
+                        Connections {
+                            target: cell
+                            function onRunningChanged() {
+                                if (cell.running) Qt.callLater(cell.publishIconGeometry);
+                            }
+                            function onActiveChanged() {
+                                if (cell.running) Qt.callLater(cell.publishIconGeometry);
                             }
                         }
-                    }
 
-                    readonly property string resolvedIcon: content.iconSource
+                        Component.onCompleted: Qt.callLater(publishIconGeometry)
 
-                    DockIcon {
-                        id: content
-                        dockRef: dock
-                        isExpanded: cell.isExpanded
+                        DropArea {
+                            width: dock.cellSize
+                            height: dock.cellSize
+                            keys: ["quickshell-dock-icon"]
 
-                        width: dock.cellSize
-                        height: dock.cellSize
-
-                        entry: cell.entry
-                        hovered: dragArea.containsMouse
-                        dragging: dragArea.drag.active
-                        windows: cell.windows
-                        active: cell.active
-
-                        currentScale: cell.targetScale
-                        liftY: cell.waveLiftY
-                        liftX: cell.waveLiftX
-                        pressed: dragArea.pressed && !dragArea.drag.active
-
-                        Drag.active: dragArea.drag.active
-                        Drag.source: cell
-                        Drag.hotSpot.x: width / 2
-                        Drag.hotSpot.y: height / 2
-                        Drag.keys: ["quickshell-dock-icon"]
-
-                        states: State {
-                            name: "dragging"
-                            when: dragArea.drag.active
-                            ParentChange { target: content; parent: dragLayer }
-                        }
-
-                        Behavior on x {
-                            enabled: !dragArea.drag.active
-                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-                        }
-                        Behavior on y {
-                            enabled: !dragArea.drag.active
-                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-                        }
-                    }
-
-                    MouseArea {
-                        id: dragArea
-
-                        width: dock.cellSize
-                        height: dock.cellSize
-                        hoverEnabled: true
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-
-                        property bool didDrag: false
-                        drag.target: (dragArea.pressedButtons & Qt.LeftButton) ? content : null
-                        drag.axis: isVertical ? Drag.YAxis : Drag.XAxis
-                        drag.threshold: 8
-
-                        onPositionChanged: mouse => {
-                            const mapped = cell.mapToItem(contentRow, mouse.x, mouse.y);
-                            dock.updatePointer(isVertical ? mapped.y : mapped.x);
-                            if (drag.active) didDrag = true;
-                        }
-
-                        onEntered: {
-                            dock.hoveredCell = cell;
-                            const mapped = cell.mapToItem(contentRow, cell.width / 2, cell.height / 2);
-                            dock.updatePointer(isVertical ? mapped.y : mapped.x);
-                        }
-
-                        onExited: {
-                            if (dock.hoveredCell === cell) dock.hoveredCell = null;
-                            dock.schedulePointerLeave();
-                        }
-
-                        Component.onDestruction: {
-                            if (dock.hoveredCell === cell) dock.hoveredCell = null;
-                            if (dock.launchCell === cell) dock.launchCell = null;
-                            if (tooltip.activeAnchor === cell) tooltip.activeAnchor = null;
-                        }
-
-                        onPressed: mouse => {
-                            didDrag = false;
-                            if (mouse.button === Qt.LeftButton) {
-                                dock.interacting = true;
-                                if (dock.expandedAppKey !== "" && dock.expandedAppKey !== cell.taskKey) {
-                                    dock.expandedAppKey = "";
+                            onEntered: drag => {
+                                const from = drag.source.dragIndex;
+                                const to = cell.index;
+                                if (from >= 0 && from !== to) {
+                                    orderModel.move(from, to, 1);
                                 }
                             }
                         }
 
-                        onReleased: mouse => {
-                            dock.interacting = false;
-                            if (didDrag) {
-                                dock.expandedAppKey = "";
-                                dock.persistOrder();
+                        readonly property string resolvedIcon: content.iconSource
+
+                        DockIcon {
+                            id: content
+                            dockRef: dock
+                            isExpanded: cell.isExpanded
+
+                            width: dock.cellSize
+                            height: dock.cellSize
+
+                            entry: cell.entry
+                            hovered: dragArea.containsMouse
+                            dragging: dragArea.drag.active
+                            windows: cell.windows
+                            active: cell.active
+
+                            currentScale: cell.targetScale
+                            liftY: cell.waveLiftY
+                            liftX: cell.waveLiftX
+                            pressed: dragArea.pressed && !dragArea.drag.active
+
+                            Drag.active: dragArea.drag.active
+                            Drag.source: cell
+                            Drag.hotSpot.x: width / 2
+                            Drag.hotSpot.y: height / 2
+                            Drag.keys: ["quickshell-dock-icon"]
+
+                            states: State {
+                                name: "dragging"
+                                when: dragArea.drag.active
+                                ParentChange { target: content; parent: dragLayer }
                             }
-                            Qt.callLater(cell.returnHome);
+
+                            Behavior on x {
+                                enabled: !dragArea.drag.active
+                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                            }
+                            Behavior on y {
+                                enabled: !dragArea.drag.active
+                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                            }
                         }
 
-                        onCanceled: {
-                            dock.interacting = false;
-                            Qt.callLater(cell.returnHome);
-                        }
+                        MouseArea {
+                            id: dragArea
 
-                        onClicked: mouse => {
-                            if (mouse.button === Qt.RightButton) {
-                                if (dock.settingsOpen) dock.settingsOpen = false;
-                                dock.expandedAppKey = "";
-                                contextMenu.open(cell);
-                                return;
+                            width: dock.cellSize
+                            height: dock.cellSize
+                            hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+                            property bool didDrag: false
+                            drag.target: (dragArea.pressedButtons & Qt.LeftButton) ? content : null
+                            drag.axis: isVertical ? Drag.YAxis : Drag.XAxis
+                            drag.threshold: 8
+
+                            onPositionChanged: mouse => {
+                                const mapped = cell.mapToItem(contentRow, mouse.x, mouse.y);
+                                dock.updatePointer(isVertical ? mapped.y : mapped.x);
+                                if (drag.active) didDrag = true;
                             }
-                            if (didDrag) return;
-                            if (contextMenu.visible) contextMenu.close();
 
-                            // Multiple windows -> Toggle inline expansion shelf!
-                            if (cell.windows > 1) {
-                                if (dock.expandedAppKey === cell.taskKey) {
-                                    dock.expandedAppKey = "";
-                                } else {
-                                    dock.expandedAppKey = cell.taskKey;
-                                    Qt.callLater(() => dock.ensureCellVisible(cell));
+                            onEntered: {
+                                dock.hoveredCell = cell;
+                                const mapped = cell.mapToItem(contentRow, cell.width / 2, cell.height / 2);
+                                dock.updatePointer(isVertical ? mapped.y : mapped.x);
+                            }
+
+                            onExited: {
+                                if (dock.hoveredCell === cell) dock.hoveredCell = null;
+                                dock.schedulePointerLeave();
+                            }
+
+                            Component.onDestruction: {
+                                if (dock.hoveredCell === cell) dock.hoveredCell = null;
+                                if (dock.launchCell === cell) dock.launchCell = null;
+                                if (tooltip.activeAnchor === cell) tooltip.activeAnchor = null;
+                            }
+
+                            onPressed: mouse => {
+                                didDrag = false;
+                                if (mouse.button === Qt.LeftButton) {
+                                    dock.interacting = true;
+                                    if (dock.expandedAppKey !== "" && dock.expandedAppKey !== cell.taskKey) {
+                                        dock.expandedAppKey = "";
+                                    }
                                 }
-                                return;
                             }
 
-                            // Single window or fresh launch
-                            dock.expandedAppKey = "";
-                            content.launch();
+                            onReleased: mouse => {
+                                dock.interacting = false;
+                                if (didDrag) {
+                                    dock.expandedAppKey = "";
+                                    dock.persistOrder();
+                                }
+                                Qt.callLater(cell.returnHome);
+                            }
 
-                            if (dock.raiseRunning && cell.running && Tasks.activate(cell.taskKey)) return;
-                            if (cell.entry) cell.entry.execute();
+                            onCanceled: {
+                                dock.interacting = false;
+                                Qt.callLater(cell.returnHome);
+                            }
+
+                            onClicked: mouse => {
+                                if (mouse.button === Qt.RightButton) {
+                                    if (dock.settingsOpen) dock.settingsOpen = false;
+                                    dock.expandedAppKey = "";
+                                    contextMenu.open(cell);
+                                    return;
+                                }
+                                if (didDrag) return;
+                                if (contextMenu.visible) contextMenu.close();
+
+                                // Multiple windows -> Toggle inline expansion shelf!
+                                if (cell.windows > 1) {
+                                    if (dock.expandedAppKey === cell.taskKey) {
+                                        dock.expandedAppKey = "";
+                                    } else {
+                                        dock.expandedAppKey = cell.taskKey;
+                                        Qt.callLater(() => dock.ensureCellVisible(cell));
+                                    }
+                                    return;
+                                }
+
+                                // Single window or fresh launch
+                                dock.expandedAppKey = "";
+                                content.launch();
+
+                                if (dock.raiseRunning && cell.running && Tasks.activate(cell.taskKey)) return;
+                                if (cell.entry) cell.entry.execute();
+                            }
                         }
-                    }
 
-                    // Inline Window Cards Shelf (Expands to the right of the app icon)
-                    Row {
-                        id: cardsRow
-                        visible: cell.width > dock.cellSize + 10
-                        opacity: Math.max(0, Math.min(1, (cell.width - dock.cellSize) / 60))
-                        anchors.left: isVertical ? undefined : parent.left
-                        anchors.leftMargin: isVertical ? 0 : (dock.cellSize + 14)
-                        anchors.top: isVertical ? parent.top : undefined
-                        anchors.topMargin: isVertical ? (dock.cellSize + 14) : 0
-                        anchors.verticalCenter: isVertical ? undefined : parent.verticalCenter
-                        anchors.horizontalCenter: isVertical ? parent.horizontalCenter : undefined
-                        spacing: dock.spacing
+                        // Inline Window Cards Shelf (Expands to the right of the app icon)
+                        Row {
+                            id: cardsRow
+                            visible: cell.width > dock.cellSize + 10
+                            opacity: Math.max(0, Math.min(1, (cell.width - dock.cellSize) / 60))
+                            anchors.left: isVertical ? undefined : parent.left
+                            anchors.leftMargin: isVertical ? 0 : (dock.cellSize + dock.shelfGap - cell.shelfAvoid)
+                            anchors.top: isVertical ? parent.top : undefined
+                            anchors.topMargin: isVertical ? (dock.cellSize + dock.shelfGap - cell.shelfAvoid) : 0
+                            anchors.verticalCenter: isVertical ? undefined : parent.verticalCenter
+                            anchors.horizontalCenter: isVertical ? parent.horizontalCenter : undefined
+                            spacing: dock.spacing
 
-                        Repeater {
-                            model: cell.windowList
-                            delegate: WindowCard {
-                                required property var modelData
-                                dockRef: dock
-                                cellRef: cell
-                                winData: modelData
+                            Repeater {
+                                model: cell.windowList
+                                delegate: WindowCard {
+                                    required property var modelData
+                                    dockRef: dock
+                                    cellRef: cell
+                                    winData: modelData
+                                }
                             }
                         }
                     }
@@ -951,12 +1043,12 @@ PanelWindow {
 
             // Left soft fade hint when scrollable content exists to the left
             Rectangle {
-                anchors.left: list.left
-                anchors.top: list.top
-                anchors.bottom: list.bottom
+                x: 0
+                y: 0
+                height: list.height
                 width: 24
                 z: 60
-                visible: dock.isOverflowing && list.contentX > 4 && !dock.isVertical
+                visible: dock.isOverflowing && list.contentX > list.scrollMin + 4 && !dock.isVertical
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: dock.background }
@@ -966,12 +1058,12 @@ PanelWindow {
 
             // Right soft fade hint when scrollable content exists to the right
             Rectangle {
-                anchors.right: list.right
-                anchors.top: list.top
-                anchors.bottom: list.bottom
+                x: list.width - width
+                y: 0
+                height: list.height
                 width: 24
                 z: 60
-                visible: dock.isOverflowing && (list.contentX < list.contentWidth - list.width - 4) && !dock.isVertical
+                visible: dock.isOverflowing && (list.contentX < list.scrollMax - 4) && !dock.isVertical
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: "transparent" }
@@ -992,12 +1084,10 @@ PanelWindow {
                     anchors.centerIn: parent
                     width: isVertical ? Math.round(dock.iconSize * 0.68) : 1
                     height: isVertical ? 1 : Math.round(dock.iconSize * 0.68)
-                    radius: 0.5
                     color: resizeMouseArea.pressed
-                        ? (dock.isLight ? "#0284c7" : "#60a5fa")
-                        : (resizeMouseArea.containsMouse
-                            ? (dock.isLight ? "#38bdf8" : "#93c5fd")
-                            : (dock.isLight ? "#25000000" : "#28ffffff"))
+                        ? Theme.accent
+                        : (dock.isLight ? Qt.rgba(0, 0, 0, resizeMouseArea.containsMouse ? 0.30 : 0.16)
+                                        : Qt.rgba(1, 1, 1, resizeMouseArea.containsMouse ? 0.32 : 0.18))
 
                     Behavior on color { ColorAnimation { duration: 120 } }
                 }
@@ -1075,7 +1165,7 @@ PanelWindow {
                 }
             }
 
-            // ---- Trash Can Cell ----
+            // ---- Trash Cell ----
             UtilityCell {
                 id: trashCell
                 dock: dock
@@ -1083,18 +1173,24 @@ PanelWindow {
                 visible: dock.showTrash
                 x: isVertical ? 0 : (list.width + (list.width > 0 ? dock.separatorTotalWidth : 0))
                 y: isVertical ? (list.height + (list.height > 0 ? dock.separatorTotalWidth : 0)) : 0
+                iconNames: Trash.empty ? ["user-trash"] : ["user-trash-full", "user-trash"]
                 glyphPaths: [
                     "M10 3.2h4c.55 0 1 .45 1 1v1.3H9v-1.3c0-.55.45-1 1-1z M4.5 6.5h15c.55 0 1 .35 1 .8s-.45.8-1 .8h-15c-.55 0-1-.35-1-.8s.45-.8 1-.8z",
                     "M6 9.5l1.1 9.8c.11.96.93 1.7 1.9 1.7h6c.97 0 1.79-.74 1.9-1.7l1.1-9.8H6zm3.8 9.5H8.3l-.6-7.8h1.5l.6 7.8zm3 0h-1.6v-7.8h1.6v7.8zm3 0h-1.5l.6-7.8h1.5l-.6 7.8z"
                 ]
                 onClicked: button => {
                     dock.expandedAppKey = "";
-                    if (button === Qt.RightButton) trashMenu.open();
-                    else Trash.open();
+                    if (button === Qt.RightButton) {
+                        if (trashMenu.visible) trashMenu.close();
+                        else trashMenu.open();
+                    } else {
+                        trashMenu.close();
+                        Trash.open();
+                    }
                 }
             }
 
-            // ---- Settings / Control Center Cell ----
+            // ---- Dock Settings Cell ----
             UtilityCell {
                 id: settingsCell
                 dock: dock
@@ -1102,8 +1198,7 @@ PanelWindow {
                 x: isVertical ? 0 : (list.width + (list.width > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0))
                 y: isVertical ? (list.height + (list.height > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0)) : 0
                 active: dock.settingsOpen
-                hoverRotation: 20
-                activeRotation: 45
+                iconNames: ["preferences-system", "systemsettings", "configure"]
                 glyphPaths: [
                     "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"
                 ]
@@ -1157,7 +1252,6 @@ PanelWindow {
             id: launchArea
             anchors.fill: parent
             hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
             enabled: dock.launchShown
             onClicked: if (launcher.cell) Tasks.launchNew(launcher.cell.taskKey);
         }
@@ -1216,7 +1310,8 @@ PanelWindow {
             : launchArea.containsMouse ? Config.newInstanceLabel
             : ((dock.showTrash && trashCell.hovered) ? "废纸篓"
             : (settingsCell.hovered ? "Dock 设置"
-            : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing) ? ("拖拽调整大小 · " + dock.iconSize + " px")
+            : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing)
+                ? (resizeMouseArea.resizing ? (dock.iconSize + " px") : "拖动以调整大小")
             : (targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || "")))))
 
         onTargetAnchorChanged: {
@@ -1273,19 +1368,18 @@ PanelWindow {
 
         Rectangle {
             anchors.fill: parent
-            radius: 8
-            color: dock.isLight ? Qt.rgba(1, 1, 1, 0.92) : Config.tooltipBackground
+            radius: 6
+            color: Theme.surface(dock.isLight)
             border.width: 1
-            border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.12) : "#30ffffff"
+            border.color: Theme.surfaceBorder(dock.isLight)
         }
 
         Text {
             id: label
             anchors.centerIn: parent
             text: tooltip.text
-            color: dock.isLight ? "#0f172a" : Config.tooltipText
+            color: Theme.textPrimary(dock.isLight)
             font.pixelSize: 12
-            font.weight: Font.Medium
         }
     }
 
@@ -1293,10 +1387,10 @@ PanelWindow {
         id: settingsLoader
         active: dock.settingsOpen
         sourceComponent: SettingsPanel {
-            anchor.item: settingsCell
+            // Screen-pinned, not anchored to settingsCell, so dock resizes don't move it.
+            screen: dock.screen
             visible: dock.settingsOpen
             activeScreen: dock.screenName
-            onClosed: dock.settingsOpen = false
             onVisibleChanged: if (!visible) dock.settingsOpen = false
         }
     }

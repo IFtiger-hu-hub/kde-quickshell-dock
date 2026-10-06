@@ -21,6 +21,8 @@ Item {
     readonly property int indicatorActiveDotSize: d ? d.indicatorActiveDotSize : root.indicatorActiveDotSize
     readonly property color indicatorColor: d ? d.indicatorColor : root.indicatorColor
     readonly property color indicatorActiveColor: d ? d.indicatorActiveColor : root.indicatorActiveColor
+    readonly property bool circularIcons: d ? d.circularIcons : Config.circularIcons
+    readonly property bool isLight: d ? d.isLight : true
 
     required property var entry
     property bool hovered: false
@@ -63,7 +65,6 @@ Item {
     onSourcesChanged: attempt = 0
 
     function launch() {
-        rippleAnim.restart();
         if (!root.running) {
             root.launching = true;
             launchTimeoutTimer.restart();
@@ -131,37 +132,6 @@ Item {
         }
     }
 
-    // Click Ripple wave expanding from center
-    Rectangle {
-        id: clickRipple
-        anchors.centerIn: parent
-        width: root.iconSize
-        height: width
-        radius: width / 2
-        color: "transparent"
-        border.color: "#80ffffff"
-        border.width: 1.5
-        opacity: 0
-        scale: 0.8
-    }
-
-    ParallelAnimation {
-        id: rippleAnim
-        NumberAnimation {
-            target: clickRipple
-            property: "scale"
-            from: 0.8; to: 1.45
-            duration: 250
-            easing.type: Easing.OutCubic
-        }
-        NumberAnimation {
-            target: clickRipple
-            property: "opacity"
-            from: 0.8; to: 0
-            duration: 250
-            easing.type: Easing.OutCubic
-        }
-    }
 
     // Drag placeholder highlight
     Rectangle {
@@ -209,7 +179,7 @@ Item {
             NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
 
-        // Expanded State: Soft subtle circular ambient aura (clean, no harsh boxy borders)
+        // Expanded state: faint neutral disc behind the icon (scales with it)
         Rectangle {
             id: expandedAura
             anchors.centerIn: parent
@@ -218,28 +188,21 @@ Item {
             radius: width / 2
             visible: root.isExpanded
             z: -1
-            opacity: root.hovered ? 1.0 : 0.65
-
-            color: (root.d && root.d.isLight) ? Qt.rgba(0.01, 0.52, 0.78, 0.14) : Qt.rgba(0.23, 0.51, 0.96, 0.22)
-            border.color: (root.d && root.d.isLight) ? Qt.rgba(2, 132, 199, 0.45) : Qt.rgba(96, 165, 250, 0.55)
-            border.width: 1.2
-
-            Behavior on opacity { NumberAnimation { duration: 150 } }
+            color: root.isLight ? Qt.rgba(0, 0, 0, root.hovered ? 0.10 : 0.07)
+                                : Qt.rgba(1, 1, 1, root.hovered ? 0.16 : 0.11)
+            Behavior on color { ColorAnimation { duration: 150 } }
         }
 
-        Image {
+        CircleIcon {
             id: icon
             anchors.fill: parent
 
-            // Render at high resolution so wave magnification remains razor sharp
-            sourceSize.width: Math.round(root.iconSize * Math.max(1.5, root.hoverScale) * 1.5)
-            sourceSize.height: Math.round(root.iconSize * Math.max(1.5, root.hoverScale) * 1.5)
-
-            asynchronous: true
-            mipmap: true
-            smooth: true
-            fillMode: Image.PreserveAspectFit
+            circular: root.circularIcons
+            isLight: root.isLight
             source: root.iconSource
+
+            // Render at high resolution so wave magnification remains razor sharp
+            renderSize: Math.round(root.iconSize * Math.max(1.5, root.hoverScale) * 1.5)
 
             onStatusChanged: {
                 if (status === Image.Error && root.attempt < root.sources.length - 1) {
@@ -291,31 +254,17 @@ Item {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
 
-        // Ambient glow behind active dot / capsule
-        Rectangle {
-            anchors.centerIn: parent
-            width: dot.width + (root.isExpanded ? 6 : 4)
-            height: dot.height + (root.isExpanded ? 6 : 4)
-            radius: width / 2
-            color: root.isExpanded
-                ? (root.d && root.d.isLight ? Qt.rgba(2, 132, 199, 0.25) : Qt.rgba(96, 165, 250, 0.35))
-                : (root.active ? "#40ffffff" : "transparent")
-            Behavior on color { ColorAnimation { duration: 150 } }
-        }
-
         // Running Dot / Expanded Indicator Capsule
         Rectangle {
             id: dot
             anchors.centerIn: parent
-            width: root.isExpanded ? 16 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
-            height: root.isExpanded ? 3.5 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
-            radius: root.isExpanded ? 2 : (width / 2)
+            width: root.isExpanded ? 14 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
+            height: root.isExpanded ? 3 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
+            radius: root.isExpanded ? 1.5 : (width / 2)
 
-            color: root.isExpanded
-                ? (root.d && root.d.isLight ? "#0284c7" : "#60a5fa")
-                : (root.launching ? "#ffffff"
-                    : root.active ? root.indicatorActiveColor
-                    : root.indicatorColor)
+            color: (root.isExpanded || root.active || root.launching)
+                ? root.indicatorActiveColor
+                : root.indicatorColor
 
             Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
             Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }

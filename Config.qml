@@ -139,16 +139,65 @@ Singleton {
         newInstanceSize: 18,
         newInstanceGap: 4,
         newInstanceStroke: 2,
-        backgroundColor: "#ffffff",
-        backgroundOpacity: 0.52,
-        border: "#60ffffff",
+        backgroundColor: "#f6f6f6",
+        backgroundOpacity: 0.45,
+        border: "#55ffffff",
         borderWidth: 1,
-        glassHighlight: true,
+        glassHighlight: false,
         shadowEnabled: true,
         showTrash: true,
-        indicatorColor: "#70334155",
-        indicatorActiveColor: "#1e293b"
+        circularIcons: true,
+        indicatorColor: "#80000000",
+        indicatorActiveColor: "#cc000000",
+        styleVersion: 2
     })
+
+    // Appearance values for the light / dark presets (neutral greys, macOS-like).
+    function presetValues(light) {
+        return light ? {
+            backgroundColor: "#f6f6f6",
+            backgroundOpacity: 0.45,
+            border: "#55ffffff",
+            borderWidth: 1,
+            glassHighlight: false,
+            shadowEnabled: true,
+            indicatorColor: "#80000000",
+            indicatorActiveColor: "#cc000000"
+        } : {
+            backgroundColor: "#1e1e1e",
+            backgroundOpacity: 0.55,
+            border: "#26ffffff",
+            borderWidth: 1,
+            glassHighlight: false,
+            shadowEnabled: true,
+            indicatorColor: "#99ffffff",
+            indicatorActiveColor: "#e6ffffff"
+        };
+    }
+
+    function isLightColor(c) {
+        const q = Qt.color(c);
+        return (0.299 * q.r + 0.587 * q.g + 0.114 * q.b) > 0.5;
+    }
+
+    // One-time move of saved configs from the old slate/blue look (styleVersion < 2)
+    // to the neutral presets, keeping each screen's light/dark choice.
+    property int styleVersion: defaults.styleVersion
+    function migrateStyle() {
+        const g = presetValues(isLightColor(root.backgroundColor));
+        for (const k in g) root[k] = g[k];
+        const copy = JSON.parse(JSON.stringify(root.screensConfig || {}));
+        for (const name in copy) {
+            const sc = copy[name];
+            if (!sc) continue;
+            const p = presetValues(isLightColor(sc.backgroundColor || root.backgroundColor));
+            for (const k in p) sc[k] = p[k];
+        }
+        root.screensConfig = copy;
+        root.styleVersion = 2;
+        root.revision++;
+        persist();
+    }
 
     // ---- Screen Enabled & Geometry ----
     property bool enabled: defaults.enabled
@@ -220,6 +269,7 @@ Singleton {
     property bool glassHighlight: defaults.glassHighlight
     property bool shadowEnabled: defaults.shadowEnabled
     property bool showTrash: defaults.showTrash
+    property bool circularIcons: defaults.circularIcons
 
     readonly property color hoverHighlight: "#1effffff"
     readonly property color dragHighlight: "#2affffff"
@@ -227,10 +277,10 @@ Singleton {
     property color indicatorColor: defaults.indicatorColor
     property color indicatorActiveColor: defaults.indicatorActiveColor
 
-    readonly property color newInstanceBackground: "#f5343b49"
-    readonly property color newInstanceHoverBackground: "#ff4b5570"
+    readonly property color newInstanceBackground: "#e6303030"
+    readonly property color newInstanceHoverBackground: "#ff4a4a4a"
     readonly property color newInstanceForeground: "#ffffff"
-    readonly property color tooltipBackground: "#e01c1f26"
+    readonly property color tooltipBackground: "#e0262626"
     readonly property color tooltipText: "#ffffff"
 
     // Setter function to update property and trigger debounced persist
@@ -251,18 +301,9 @@ Singleton {
         }
     }
 
-    // Authentic macOS Light Frosted Glass Preset
+    // Light preset
     function applyLightPreset(screenName) {
-        const p = {
-            backgroundColor: "#ffffff",
-            backgroundOpacity: 0.52,
-            border: "#60ffffff",
-            borderWidth: 1,
-            glassHighlight: true,
-            shadowEnabled: true,
-            indicatorColor: "#70334155",
-            indicatorActiveColor: "#1e293b"
-        };
+        const p = presetValues(true);
         if (root.perScreenConfig && screenName) {
             for (const k in p) setScreenVal(screenName, k, p[k]);
         } else {
@@ -271,18 +312,9 @@ Singleton {
         saveTimer.restart();
     }
 
-    // Authentic macOS Dark Frosted Glass Preset
+    // Dark preset
     function applyDarkPreset(screenName) {
-        const p = {
-            backgroundColor: "#20242c",
-            backgroundOpacity: 0.58,
-            border: "#30ffffff",
-            borderWidth: 1,
-            glassHighlight: true,
-            shadowEnabled: true,
-            indicatorColor: "#b8ffffff",
-            indicatorActiveColor: "#ffffff"
-        };
+        const p = presetValues(false);
         if (root.perScreenConfig && screenName) {
             for (const k in p) setScreenVal(screenName, k, p[k]);
         } else {
@@ -310,13 +342,13 @@ Singleton {
             runningIndicator: true,
             indicatorDotSize: 4,
             indicatorActiveDotSize: 5,
-            indicatorColor: "#b8ffffff",
-            indicatorActiveColor: "#ffffff",
-            backgroundColor: "#20242c",
-            backgroundOpacity: 0.58,
-            border: "#30ffffff",
+            indicatorColor: "#99ffffff",
+            indicatorActiveColor: "#e6ffffff",
+            backgroundColor: "#1e1e1e",
+            backgroundOpacity: 0.55,
+            border: "#26ffffff",
             borderWidth: 1,
-            glassHighlight: true,
+            glassHighlight: false,
             shadowEnabled: true,
             showRunningApps: true,
             raiseRunning: true,
@@ -370,9 +402,11 @@ Singleton {
         printErrors: false
 
         onLoaded: {
+            let needsMigration = false;
             try {
                 const parsed = JSON.parse(this.text());
                 if (parsed && typeof parsed === "object") {
+                    needsMigration = !(parsed.styleVersion >= 2);
                     for (const k in parsed) {
                         if (root.defaults.hasOwnProperty(k)) {
                             root[k] = parsed[k];
@@ -388,6 +422,7 @@ Singleton {
             } catch (e) {
                 console.warn("dock: failed to load config:", e);
             }
+            if (needsMigration) root.migrateStyle();
             root.ready = true;
         }
 

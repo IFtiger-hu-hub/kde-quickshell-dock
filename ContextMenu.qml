@@ -83,6 +83,7 @@ PopupWindow {
     // Hardware-accelerated Gaussian Blur behind ContextMenu via KWin
     BackgroundEffect.blurRegion: Region {
         item: card
+        radius: card.radius
     }
 
     // Ambient diffuse drop shadow
@@ -90,13 +91,14 @@ PopupWindow {
         id: cardShadow
         anchors.fill: card
         radius: card.radius
-        color: root.isLight ? "#30000000" : "#65000000"
+        color: Theme.shadow(root.isLight)
         blur: 20
         spread: 0
         z: -1
     }
 
     readonly property bool isLight: dockRef ? dockRef.isLight : ((0.299 * Config.backgroundColor.r + 0.587 * Config.backgroundColor.g + 0.114 * Config.backgroundColor.b) > 0.5)
+    readonly property bool circularIcons: dockRef ? dockRef.circularIcons : Config.circularIcons
 
     Process {
         id: dbusCall
@@ -138,21 +140,10 @@ PopupWindow {
         anchors.bottom: position === "top" ? parent.bottom : undefined
         anchors.top: position === "top" ? undefined : parent.top
 
-        color: root.isLight ? Qt.rgba(0.97, 0.98, 1.0, 0.92) : "#f2141824"
-        radius: 14
-        border.color: root.isLight ? Qt.rgba(0, 0, 0, 0.12) : "#28ffffff"
+        color: Theme.surface(root.isLight)
+        radius: 10
+        border.color: Theme.surfaceBorder(root.isLight)
         border.width: 1
-
-        // Top subtle highlight
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: 1
-            height: 1
-            color: root.isLight ? Qt.rgba(1, 1, 1, 0.85) : "#30ffffff"
-            radius: 14
-        }
 
         Column {
             id: mainCol
@@ -168,10 +159,7 @@ PopupWindow {
             Rectangle {
                 width: parent.width
                 height: 50
-                color: root.isLight ? Qt.rgba(0, 0, 0, 0.04) : "#12ffffff"
-                radius: 10
-                border.color: root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#18ffffff"
-                border.width: 1
+                color: "transparent"
 
                 Row {
                     anchors.fill: parent
@@ -183,14 +171,13 @@ PopupWindow {
                         height: 34
                         anchors.verticalCenter: parent.verticalCenter
 
-                        Image {
+                        CircleIcon {
                             id: appIcon
                             anchors.fill: parent
                             source: root.headerIconSource
-                            sourceSize.width: 34
-                            sourceSize.height: 34
-                            fillMode: Image.PreserveAspectFit
-                            asynchronous: true
+                            circular: root.circularIcons
+                            isLight: root.isLight
+                            renderSize: 68
                             onStatusChanged: {
                                 if (status === Image.Error && root.iconAttempt < root.iconSources.length - 1) {
                                     root.iconAttempt++;
@@ -207,7 +194,7 @@ PopupWindow {
                         Text {
                             width: parent.width
                             text: root.targetEntry ? root.targetEntry.name : (root.targetCell ? root.targetCell.appId : "")
-                            color: root.isLight ? "#0f172a" : "#ffffff"
+                            color: Theme.textPrimary(root.isLight)
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -216,20 +203,12 @@ PopupWindow {
                         Row {
                             spacing: 5
 
-                            Rectangle {
-                                width: 6
-                                height: 6
-                                radius: 3
-                                anchors.verticalCenter: parent.verticalCenter
-                                color: root.isRunning ? (root.isLight ? "#059669" : "#10b981") : (root.isLight ? "#94a3b8" : "#64748b")
-                            }
-
                             Text {
                                 text: root.isRunning
                                     ? (root.windowCount > 1 ? ("运行中 · " + root.windowCount + " 个窗口") : "正在运行")
                                     : "未运行"
-                                color: root.isRunning ? (root.isLight ? "#059669" : "#34d399") : (root.isLight ? "#64748b" : "#94a3b8")
-                                font.pixelSize: 10
+                                color: Theme.textSecondary(root.isLight)
+                                font.pixelSize: 11
                             }
                         }
                     }
@@ -245,7 +224,7 @@ PopupWindow {
                 Rectangle {
                     width: parent.width
                     height: 1
-                    color: root.isLight ? Qt.rgba(0, 0, 0, 0.08) : "#18ffffff"
+                    color: Theme.separator(root.isLight)
                 }
 
                 Item {
@@ -258,32 +237,13 @@ PopupWindow {
                         anchors.leftMargin: 6
                         spacing: 6
 
-                        Image {
-                            source: "image://icon/document-open-recent"
-                            sourceSize.width: 13
-                            sourceSize.height: 13
-                            width: 13
-                            height: 13
-                            anchors.verticalCenter: parent.verticalCenter
-                            opacity: root.isLight ? 0.65 : 0.75
-                        }
-
                         Text {
                             text: "最近打开"
                             font.pixelSize: 11
-                            font.weight: Font.Bold
-                            color: root.isLight ? "#64748b" : "#94a3b8"
+                            font.weight: Font.DemiBold
+                            color: Theme.textSecondary(root.isLight)
                             anchors.verticalCenter: parent.verticalCenter
                         }
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.right: parent.right
-                        anchors.rightMargin: 6
-                        text: Math.min(root.recentList.length, 8) + " 项"
-                        font.pixelSize: 10
-                        color: root.isLight ? "#94a3b8" : "#64748b"
                     }
                 }
 
@@ -294,10 +254,8 @@ PopupWindow {
                         id: recentRow
                         width: parent.width
                         height: 38
-                        radius: 8
-                        color: itemMouseArea.pressed
-                            ? (root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#35ffffff")
-                            : (itemMouseArea.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent")
+                        radius: 6
+                        color: itemMouseArea.pressed ? Qt.darker(Theme.accent, 1.12) : (itemMouseArea.containsMouse ? Theme.accent : "transparent")
 
                         Behavior on color {
                             ColorAnimation { duration: 100 }
@@ -339,27 +297,18 @@ PopupWindow {
                                 Text {
                                     width: parent.width
                                     text: modelData.title
-                                    color: itemMouseArea.containsMouse ? (root.isLight ? "#0284c7" : "#ffffff") : (root.isLight ? "#1e293b" : "#e2e8f0")
+                                    color: itemMouseArea.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
                                     font.pixelSize: 12
-                                    font.weight: Font.Medium
                                     elide: Text.ElideMiddle
                                 }
 
                                 Text {
                                     width: parent.width
                                     text: modelData.displayPath
-                                    color: root.isLight ? "#64748b" : "#94a3b8"
+                                    color: itemMouseArea.containsMouse ? Qt.rgba(1, 1, 1, 0.75) : Theme.textSecondary(root.isLight)
                                     font.pixelSize: 10
                                     elide: Text.ElideMiddle
                                 }
-                            }
-
-                            Text {
-                                text: "↗"
-                                color: root.isLight ? "#0284c7" : "#60a5fa"
-                                font.pixelSize: 12
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: itemMouseArea.containsMouse
                             }
                         }
 
@@ -367,7 +316,6 @@ PopupWindow {
                             id: itemMouseArea
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 RecentFiles.openFile(root.targetEntry, modelData.path);
                                 root.close();
@@ -386,7 +334,7 @@ PopupWindow {
                 Rectangle {
                     width: parent.width
                     height: 1
-                    color: root.isLight ? Qt.rgba(0, 0, 0, 0.08) : "#18ffffff"
+                    color: Theme.separator(root.isLight)
                 }
 
                 Item {
@@ -399,8 +347,8 @@ PopupWindow {
                         anchors.leftMargin: 6
                         text: "快捷操作"
                         font.pixelSize: 11
-                        font.weight: Font.Bold
-                        color: root.isLight ? "#64748b" : "#94a3b8"
+                        font.weight: Font.DemiBold
+                        color: Theme.textSecondary(root.isLight)
                     }
                 }
 
@@ -410,10 +358,8 @@ PopupWindow {
                     delegate: Rectangle {
                         width: parent.width
                         height: 32
-                        radius: 8
-                        color: actMouseArea.pressed
-                            ? (root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#35ffffff")
-                            : (actMouseArea.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent")
+                        radius: 6
+                        color: actMouseArea.pressed ? Qt.darker(Theme.accent, 1.12) : (actMouseArea.containsMouse ? Theme.accent : "transparent")
 
                         Behavior on color {
                             ColorAnimation { duration: 100 }
@@ -443,7 +389,7 @@ PopupWindow {
                                 width: parent.width - 24
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: modelData.name
-                                color: actMouseArea.containsMouse ? (root.isLight ? "#0284c7" : "#ffffff") : (root.isLight ? "#1e293b" : "#e2e8f0")
+                                color: actMouseArea.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
                                 font.pixelSize: 12
                                 elide: Text.ElideRight
                             }
@@ -453,7 +399,6 @@ PopupWindow {
                             id: actMouseArea
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 modelData.execute();
                                 root.close();
@@ -471,18 +416,16 @@ PopupWindow {
                 Rectangle {
                     width: parent.width
                     height: 1
-                    color: root.isLight ? Qt.rgba(0, 0, 0, 0.08) : "#18ffffff"
+                    color: Theme.separator(root.isLight)
                 }
 
                 // If running: New Instance
                 Rectangle {
                     width: parent.width
                     height: 32
-                    radius: 8
+                    radius: 6
                     visible: root.isRunning
-                    color: newInstMouse.pressed
-                        ? (root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#35ffffff")
-                        : (newInstMouse.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent")
+                    color: newInstMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (newInstMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
                         anchors.fill: parent
@@ -502,7 +445,7 @@ PopupWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "新建窗口"
-                            color: newInstMouse.containsMouse ? (root.isLight ? "#0284c7" : "#ffffff") : (root.isLight ? "#1e293b" : "#e2e8f0")
+                            color: newInstMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
                             font.pixelSize: 12
                         }
                     }
@@ -511,7 +454,6 @@ PopupWindow {
                         id: newInstMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             Tasks.launchNew(root.taskKey);
                             root.close();
@@ -523,11 +465,9 @@ PopupWindow {
                 Rectangle {
                     width: parent.width
                     height: 32
-                    radius: 8
+                    radius: 6
                     visible: root.isRunning
-                    color: activateMouse.pressed
-                        ? (root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#35ffffff")
-                        : (activateMouse.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent")
+                    color: activateMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (activateMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
                         anchors.fill: parent
@@ -547,7 +487,7 @@ PopupWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.windowCount > 1 ? "切换下一个窗口" : "置顶应用窗口"
-                            color: activateMouse.containsMouse ? (root.isLight ? "#0284c7" : "#ffffff") : (root.isLight ? "#1e293b" : "#e2e8f0")
+                            color: activateMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
                             font.pixelSize: 12
                         }
                     }
@@ -556,7 +496,6 @@ PopupWindow {
                         id: activateMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             Tasks.activate(root.taskKey, false);
                             root.close();
@@ -568,11 +507,9 @@ PopupWindow {
                 Rectangle {
                     width: parent.width
                     height: 32
-                    radius: 8
+                    radius: 6
                     visible: !root.isRunning
-                    color: launchMouse.pressed
-                        ? (root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#35ffffff")
-                        : (launchMouse.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent")
+                    color: launchMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (launchMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
                         anchors.fill: parent
@@ -592,7 +529,7 @@ PopupWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "启动应用"
-                            color: launchMouse.containsMouse ? (root.isLight ? "#0284c7" : "#ffffff") : (root.isLight ? "#1e293b" : "#e2e8f0")
+                            color: launchMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
                             font.pixelSize: 12
                         }
                     }
@@ -601,7 +538,6 @@ PopupWindow {
                         id: launchMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             if (root.targetEntry) root.targetEntry.execute();
                             root.close();
@@ -613,10 +549,8 @@ PopupWindow {
                 Rectangle {
                     width: parent.width
                     height: 32
-                    radius: 8
-                    color: pinMouse.pressed
-                        ? (root.isLight ? Qt.rgba(0, 0, 0, 0.10) : "#35ffffff")
-                        : (pinMouse.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : "#20ffffff") : "transparent")
+                    radius: 6
+                    color: pinMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (pinMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
                         anchors.fill: parent
@@ -636,7 +570,7 @@ PopupWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.isPinned ? "从 Dock 移除" : "固定到 Dock"
-                            color: pinMouse.containsMouse ? (root.isPinned ? "#ef4444" : (root.isLight ? "#0284c7" : "#60a5fa")) : (root.isLight ? "#1e293b" : "#e2e8f0")
+                            color: pinMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
                             font.pixelSize: 12
                         }
                     }
@@ -645,7 +579,6 @@ PopupWindow {
                         id: pinMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             if (root.isPinned) root.unpinApp();
                             else root.pinApp();

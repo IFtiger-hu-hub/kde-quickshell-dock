@@ -21,10 +21,12 @@ Singleton {
     property bool busy: false
 
     function refresh() {
-        if (!lister.running) lister.running = true;
+        lister.running = false;
+        lister.running = true;
     }
 
     function open() {
+        opener.command = ["kioclient", "exec", "trash:/"];
         opener.startDetached();
     }
 
