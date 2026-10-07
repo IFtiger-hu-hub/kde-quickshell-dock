@@ -293,15 +293,14 @@ Item {
 
     readonly property bool isVertical: root.dockPosition === "left" || root.dockPosition === "right"
 
-    // ---- macOS Authentic Centered Running Indicator Dot ----
+    // ---- Modern Linux / Plasma 6 Multi-Window Running Indicator ----
     Item {
         id: indicatorContainer
 
+        readonly property bool hasMultiWindows: !root.isExpanded && root.windows > 1
         readonly property int dotThickness: root.isExpanded ? 3 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
-        readonly property int dotLength: root.isExpanded ? 14 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
-
-        readonly property int targetWidth: root.isVertical ? dotThickness : dotLength
-        readonly property int targetHeight: root.isVertical ? dotLength : dotThickness
+        readonly property int targetWidth: root.isVertical ? dotThickness : (root.isExpanded ? 16 : (hasMultiWindows ? (root.indicatorDotSize * 2 + 3) : dotThickness))
+        readonly property int targetHeight: root.isVertical ? (root.isExpanded ? 16 : (hasMultiWindows ? (root.indicatorDotSize * 2 + 3) : dotThickness)) : dotThickness
 
         width: targetWidth
         height: targetHeight
@@ -335,16 +334,33 @@ Item {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
 
-        // Running Dot / Expanded Indicator Capsule
+        readonly property color activeAccent: Theme.accent
+        readonly property color normalColor: root.indicatorColor
+        readonly property color currentIndicatorColor: (root.isExpanded || root.active || root.launching)
+            ? activeAccent
+            : normalColor
+
+        // Subtle ambient glow for active or expanded app
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width + 4
+            height: parent.height + 4
+            radius: Math.min(width, height) / 2
+            color: Theme.accent
+            opacity: (root.active || root.isExpanded) ? 0.35 : 0
+            visible: opacity > 0
+            z: -1
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+        }
+
+        // Layout: Single Dot / Expanded Capsule
         Rectangle {
             id: dot
             anchors.fill: parent
+            visible: !indicatorContainer.hasMultiWindows
             radius: Math.min(width, height) / 2
 
-            color: (root.isExpanded || root.active || root.launching)
-                ? root.indicatorActiveColor
-                : root.indicatorColor
-
+            color: indicatorContainer.currentIndicatorColor
             Behavior on color { ColorAnimation { duration: 140 } }
 
             SequentialAnimation {
@@ -354,6 +370,32 @@ Item {
                 NumberAnimation { target: dot; property: "opacity"; from: 0.25; to: 1.0; duration: 380; easing.type: Easing.InOutQuad }
                 NumberAnimation { target: dot; property: "opacity"; from: 1.0; to: 0.25; duration: 380; easing.type: Easing.InOutQuad }
                 onStopped: dot.opacity = 1.0
+            }
+        }
+
+        // Layout: Multi-Window Distinct Dual Indicator Dots
+        Grid {
+            id: multiDotsGrid
+            anchors.centerIn: parent
+            visible: indicatorContainer.hasMultiWindows
+            columns: root.isVertical ? 1 : 2
+            rows: root.isVertical ? 2 : 1
+            spacing: 3
+
+            Rectangle {
+                width: root.active ? root.indicatorActiveDotSize : root.indicatorDotSize
+                height: width
+                radius: width / 2
+                color: root.active ? Theme.accent : root.indicatorColor
+                Behavior on color { ColorAnimation { duration: 140 } }
+            }
+
+            Rectangle {
+                width: root.indicatorDotSize
+                height: width
+                radius: width / 2
+                color: root.active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.65) : root.indicatorColor
+                Behavior on color { ColorAnimation { duration: 140 } }
             }
         }
     }

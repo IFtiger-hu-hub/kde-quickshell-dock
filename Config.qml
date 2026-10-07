@@ -155,6 +155,7 @@ Singleton {
         glassHighlight: false,
         shadowEnabled: true,
         showTrash: true,
+        showDrawer: true,
         circularIcons: true,
         iconShape: "circle",
         folderPreviewScale: 1.0,
@@ -280,6 +281,7 @@ Singleton {
     property bool glassHighlight: defaults.glassHighlight
     property bool shadowEnabled: defaults.shadowEnabled
     property bool showTrash: defaults.showTrash
+    property bool showDrawer: defaults.showDrawer
     property bool circularIcons: defaults.circularIcons
     property string iconShape: defaults.iconShape
     property real folderPreviewScale: defaults.folderPreviewScale
@@ -306,6 +308,7 @@ Singleton {
         }
         if (root[key] === val) return;
         root[key] = val;
+        root.revision++;
         if (!root.ready) {
             root.pendingWrite = true;
             return;
@@ -320,6 +323,7 @@ Singleton {
             for (const k in defaults) {
                 root[k] = defaults[k];
             }
+            root.revision++;
             saveTimer.restart();
         }
     }
@@ -378,6 +382,7 @@ Singleton {
             minimizeActive: true,
             newInstanceButton: false,
             showTrash: true,
+            showDrawer: true,
             circularIcons: true,
             iconShape: "circle",
             folderPreviewScale: 1.0,

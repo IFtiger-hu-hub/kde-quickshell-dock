@@ -177,15 +177,18 @@ Item {
 
                         onModelDataChanged: attempt = 0
 
-                        CircleIcon {
+                        Image {
                             id: miniIcon
-                            anchors.fill: parent
+                            anchors.centerIn: parent
+                            width: parent.width
+                            height: parent.height
                             source: miniCell.currentSource
-                            circular: root.circularIcons
-                            iconShape: root.iconShape
-                            isLight: root.isLight
-                            shadow: false
-                            renderSize: Math.round(width * 2)
+                            asynchronous: true
+                            smooth: true
+                            mipmap: true
+                            fillMode: Image.PreserveAspectFit
+                            readonly property int rasterDim: Math.max(24, Math.round(miniCell.width * 2))
+                            sourceSize: Qt.size(rasterDim, rasterDim)
                             onStatusChanged: {
                                 if (status === Image.Error && miniCell.attempt < miniCell.iconSources.length - 1) {
                                     miniCell.attempt++;
@@ -200,26 +203,29 @@ Item {
 
     readonly property bool isVertical: root.dockPosition === "left" || root.dockPosition === "right"
 
-    // macOS Authentic Centered Running Indicator Dot
+    // Modern Linux / Plasma 6 Running Indicator
     Item {
         id: indicatorContainer
 
-        readonly property int dotSize: root.active ? root.indicatorActiveDotSize : root.indicatorDotSize
+        readonly property bool hasMultiWindows: root.windows > 1
+        readonly property int dotThickness: root.active ? root.indicatorActiveDotSize : root.indicatorDotSize
+        readonly property int targetWidth: root.isVertical ? dotThickness : (hasMultiWindows ? (root.indicatorDotSize * 2 + 3) : dotThickness)
+        readonly property int targetHeight: root.isVertical ? (hasMultiWindows ? (root.indicatorDotSize * 2 + 3) : dotThickness) : dotThickness
 
-        width: dotSize
-        height: dotSize
+        width: targetWidth
+        height: targetHeight
 
         anchors.horizontalCenter: (!root.isVertical) ? parent.horizontalCenter : undefined
         anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
 
         x: root.dockPosition === "left"
-            ? Math.round((parent.width - root.iconSize) / 2 - dotSize - 2)
+            ? Math.round((parent.width - root.iconSize) / 2 - targetWidth - 2)
             : root.dockPosition === "right"
             ? Math.round(parent.width - (parent.width - root.iconSize) / 2 + 2)
             : 0
 
         y: root.dockPosition === "top"
-            ? Math.round((parent.height - root.iconSize) / 2 - dotSize - 2)
+            ? Math.round((parent.height - root.iconSize) / 2 - targetHeight - 2)
             : root.dockPosition === "bottom"
             ? Math.round(parent.height - (parent.height - root.iconSize) / 2 + 2)
             : 0
@@ -227,17 +233,56 @@ Item {
         visible: opacity > 0
         opacity: root.runningIndicator && root.running && !root.dragging ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 160 } }
+        Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+        Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
+        // Subtle ambient glow when active
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width + 4
+            height: parent.height + 4
+            radius: Math.min(width, height) / 2
+            color: Theme.accent
+            opacity: root.active ? 0.35 : 0
+            visible: opacity > 0
+            z: -1
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+        }
+
+        // Single Dot
         Rectangle {
             id: dot
             anchors.fill: parent
+            visible: !indicatorContainer.hasMultiWindows
             radius: width / 2
 
-            color: root.active ? root.indicatorActiveColor : root.indicatorColor
-
-            Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            color: root.active ? Theme.accent : root.indicatorColor
             Behavior on color { ColorAnimation { duration: 140 } }
+        }
+
+        // Multi-Window Dual Dots
+        Grid {
+            anchors.centerIn: parent
+            visible: indicatorContainer.hasMultiWindows
+            columns: root.isVertical ? 1 : 2
+            rows: root.isVertical ? 2 : 1
+            spacing: 3
+
+            Rectangle {
+                width: root.active ? root.indicatorActiveDotSize : root.indicatorDotSize
+                height: width
+                radius: width / 2
+                color: root.active ? Theme.accent : root.indicatorColor
+                Behavior on color { ColorAnimation { duration: 140 } }
+            }
+
+            Rectangle {
+                width: root.indicatorDotSize
+                height: width
+                radius: width / 2
+                color: root.active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.65) : root.indicatorColor
+                Behavior on color { ColorAnimation { duration: 140 } }
+            }
         }
     }
 }

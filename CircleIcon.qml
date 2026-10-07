@@ -31,7 +31,9 @@ Item {
     property real overscan: iconShape === "circle" ? 1.125 : (iconShape === "squircle" ? 0.86 : 1.0)
 
     // Pixel size the artwork is rasterised (and the clip layer rendered) at.
-    property int renderSize: Math.max(32, Math.round(diameter) * 2)
+    property int renderSize: Math.min(256, Math.max(32, Math.round(diameter) * 2))
+
+    readonly property bool needsLayer: root.isMasked && root.diameter > 24
 
     readonly property alias status: icon.status
 
@@ -66,8 +68,9 @@ Item {
         height: root.diameter
         radius: root.cornerRadius
         visible: false
-        layer.enabled: true
+        layer.enabled: root.needsLayer
         layer.smooth: true
+        layer.mipmap: false
         layer.textureSize: Qt.size(root.renderSize, root.renderSize)
     }
 
@@ -79,14 +82,20 @@ Item {
         height: root.diameter
         anchors.centerIn: parent
 
-        layer.enabled: root.isMasked
+        layer.enabled: root.needsLayer
         layer.smooth: true
+        layer.mipmap: false
         layer.textureSize: Qt.size(root.renderSize, root.renderSize)
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskSource: mask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
+        layer.effect: root.needsLayer ? maskEffect : null
+
+        Component {
+            id: maskEffect
+            MultiEffect {
+                maskEnabled: true
+                maskSource: mask
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 1.0
+            }
         }
 
         Image {

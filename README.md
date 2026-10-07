@@ -73,12 +73,12 @@ quickshell binary, adds an autostart entry, and (re)starts the dock. Everything
 goes under `$HOME`; the dock runs straight from this checkout, so `git pull` is
 the update.
 
-| Command | Effect |
-| --- | --- |
-| `./scripts/install.sh` | Install and start, with autostart |
-| `./scripts/install.sh --no-autostart` | Same, without the autostart entry |
-| `./scripts/install.sh check` | Only report missing dependencies |
-| `./scripts/install.sh uninstall` | Stop the dock, remove the permission and autostart files (settings are kept) |
+| Command                               | Effect                                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| `./scripts/install.sh`                | Install and start, with autostart                                            |
+| `./scripts/install.sh --no-autostart` | Same, without the autostart entry                                            |
+| `./scripts/install.sh check`          | Only report missing dependencies                                             |
+| `./scripts/install.sh uninstall`      | Stop the dock, remove the permission and autostart files (settings are kept) |
 
 If the running-app dots don't show up right after installing, log out and back
 in once — KWin only consults the permission file for clients it sees start
@@ -100,29 +100,29 @@ apply immediately and are saved to Quickshell's state directory
 (`dock-config.json`); with **per-screen** configuration on, each monitor keeps
 its own copy. Defaults live in [Config.qml](Config.qml). The most useful knobs:
 
-| Property | Meaning |
-| --- | --- |
-| `position` | `bottom`, `top`, `left` or `right` |
-| `screenMode` / `targetScreen` | Dock on `all` screens, the `primary` one, or a `custom` named one |
-| `iconSize` | Icon size; also adjustable by dragging the separator line (double-click resets) |
-| `source` | `"kickoff"` for launcher favourites, `"taskmanager"` for the task manager's pinned launchers |
-| `showRunningApps` | Also show running apps that aren't pinned |
-| `autoHide` | Slide away when unused, leaving `peekHeight` px showing |
-| `peekHeight` / `peekOpacity` | How much of the dock stays visible while hidden, and how solid |
-| `triggerHeight` | Invisible pointer-catching strip along the screen edge |
-| `hideDelay` | How long the pointer must be away before it hides |
-| `reserveSpace` | `true` makes windows avoid the dock; `false` floats it on top |
-| `hoverMagnify` / `hoverScale` / `waveSpread` | Hover zoom on/off, peak scale, and how many neighbours the wave reaches |
-| `bounceOnLaunch` | Bounce the icon until the app's window appears |
-| `raiseRunning` | Clicking a running app raises its windows instead of launching another copy |
-| `minimizeActive` | Clicking the focused app's only window minimizes it |
-| `runningIndicator` | Draw the running dot under the icon |
-| `indicatorColor` / `indicatorActiveColor` | Dot colour, and the colour used for the focused app |
-| `newInstanceButton` | Show a **+** button above a running app's icon (off by default) |
-| `backgroundColor` / `backgroundOpacity` | Plate tint and translucency, kept separate from hex alpha |
-| `border` / `borderWidth` / `glassHighlight` / `shadowEnabled` | Plate outline, specular top edge, drop shadow |
-| `edgeCorners` / `cornerSize` | Inverted corners flaring the dock into the screen edge |
-| `showTrash` | Show the Trash cell |
+| Property                                                      | Meaning                                                                                      |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `position`                                                    | `bottom`, `top`, `left` or `right`                                                           |
+| `screenMode` / `targetScreen`                                 | Dock on `all` screens, the `primary` one, or a `custom` named one                            |
+| `iconSize`                                                    | Icon size; also adjustable by dragging the separator line (double-click resets)              |
+| `source`                                                      | `"kickoff"` for launcher favourites, `"taskmanager"` for the task manager's pinned launchers |
+| `showRunningApps`                                             | Also show running apps that aren't pinned                                                    |
+| `autoHide`                                                    | Slide away when unused, leaving `peekHeight` px showing                                      |
+| `peekHeight` / `peekOpacity`                                  | How much of the dock stays visible while hidden, and how solid                               |
+| `triggerHeight`                                               | Invisible pointer-catching strip along the screen edge                                       |
+| `hideDelay`                                                   | How long the pointer must be away before it hides                                            |
+| `reserveSpace`                                                | `true` makes windows avoid the dock; `false` floats it on top                                |
+| `hoverMagnify` / `hoverScale` / `waveSpread`                  | Hover zoom on/off, peak scale, and how many neighbours the wave reaches                      |
+| `bounceOnLaunch`                                              | Bounce the icon until the app's window appears                                               |
+| `raiseRunning`                                                | Clicking a running app raises its windows instead of launching another copy                  |
+| `minimizeActive`                                              | Clicking the focused app's only window minimizes it                                          |
+| `runningIndicator`                                            | Draw the running dot under the icon                                                          |
+| `indicatorColor` / `indicatorActiveColor`                     | Dot colour, and the colour used for the focused app                                          |
+| `newInstanceButton`                                           | Show a **+** button above a running app's icon (off by default)                              |
+| `backgroundColor` / `backgroundOpacity`                       | Plate tint and translucency, kept separate from hex alpha                                    |
+| `border` / `borderWidth` / `glassHighlight` / `shadowEnabled` | Plate outline, specular top edge, drop shadow                                                |
+| `edgeCorners` / `cornerSize`                                  | Inverted corners flaring the dock into the screen edge                                       |
+| `showTrash`                                                   | Show the Trash cell                                                                          |
 
 Quickshell hot-reloads on save, so edits to the QML apply immediately.
 
@@ -149,7 +149,7 @@ took real debugging:
   re-evaluates hover when a pointer event arrives, so a target that slid with the
   plate would move out from under a motionless pointer and report nothing
   hovered.
-- That handler has to be an *ancestor* of the icons rather than a sibling,
+- That handler has to be an _ancestor_ of the icons rather than a sibling,
   because the icons' `MouseArea`s consume hover events. As a sibling it saw
   nothing whenever the pointer was over an icon, and the dock revealed and then
   immediately hid again.
@@ -184,7 +184,7 @@ faded edges hint at what's off-screen, and the Trash and Settings cells stay
 pinned to the end.
 
 The **+** button (`newInstanceButton`, off by default) is the way to
-*deliberately* open another window. It appears on hover over a running app and
+_deliberately_ open another window. It appears on hover over a running app and
 calls `requestNewInstance`, which runs the launcher afresh. The right-click menu
 has the same action as “新建窗口”.
 
@@ -283,7 +283,7 @@ translucent shapes overlapped.
 
 A continuous outline can't have the corner arc and the fillet arc overlap
 vertically — the path would double back on itself. What peeks above the edge is
-the plate's *top* edge, so on a thin sliver they're competing for the same few
+the plate's _top_ edge, so on a thin sliver they're competing for the same few
 pixels.
 
 The **radius gets first claim** on the visible height, and the fillet takes
@@ -292,7 +292,7 @@ therefore a pure rounded cap with no flare, and the flare grows in as the dock
 expands past the radius. Prioritising the radius is deliberate: the alternative
 leaves a thin sliver looking like a flat-ended box.
 
-If you want a pronounced flare *while peeking* as well, the lever is a taller
+If you want a pronounced flare _while peeking_ as well, the lever is a taller
 `peekHeight` — there's simply no room for both in 8px.
 
 All of it is driven off how much of the plate is showing, so it animates for free
@@ -352,7 +352,7 @@ Two practical notes:
   really is the only source. It's read strictly read-only, via `sqlite3` or
   `python3`'s bundled engine, whichever is present. `kactivitymanagerd` holds it
   open in WAL mode, which permits concurrent readers.
-- Favouriting something *does* emit D-Bus signals, so the dock subscribes to
+- Favouriting something _does_ emit D-Bus signals, so the dock subscribes to
   `ResourceLinkedToActivity`/`ResourceUnlinkedFromActivity` via `gdbus monitor`
   and re-queries, rather than polling.
 
@@ -362,7 +362,7 @@ there anyway.
 
 ## How ordering works
 
-Plasma owns *which* apps are favourites; this dock owns *the order*.
+Plasma owns _which_ apps are favourites; this dock owns _the order_.
 
 Dragging writes only to the dock's own state file
 (`~/.local/state/quickshell/by-shell/<id>/dock-order.json`) and never touches
@@ -388,31 +388,31 @@ and KIO keeps a `directorysizes` cache next to them. Deleting `files/` and
 
 ## Layout
 
-| File | Role |
-| --- | --- |
-| [shell.qml](shell.qml) | Entry point; one dock per screen |
-| [Dock.qml](Dock.qml) | The panel: layer-shell window, list, drag-reorder wiring, wave engine, auto-hide, overflow scrolling, tooltip |
-| [DockIcon.qml](DockIcon.qml) | One app cell's visuals — icon, hover zoom, launch bounce, running dot |
-| [WindowCard.qml](WindowCard.qml) | One window card in an expanded multi-window app |
-| [UtilityCell.qml](UtilityCell.qml) | The circular-plate Trash and Settings cells |
-| [CircleIcon.qml](CircleIcon.qml) | App icon clipped to uniform circle or squircle (rounded square) on a light/dark plate (`iconShape`: circle, squircle, original) |
-| [FolderDockIcon.qml](FolderDockIcon.qml) | Application folder cell with adaptive 2x2/3x3 mini grid preview and smooth liquid glass plate |
-| [Theme.qml](Theme.qml) | Shared neutral colour tokens; accent follows the KDE accent colour from `kdeglobals` (live) |
-| [TrashMenu.qml](TrashMenu.qml) | Trash right-click menu with the empty confirmation |
-| [ContextMenu.qml](ContextMenu.qml) | Per-app right-click menu: recent files, actions, pin/unpin |
-| [SettingsPanel.qml](SettingsPanel.qml) | The settings popup behind the gear cell |
-| [Tasks.qml](Tasks.qml) | What's running, via Plasma's libtaskmanager; raise, minimize, close, new instance, window list |
-| [Trash.qml](Trash.qml) | Trash item count, open and empty, through KIO |
-| [RecentFiles.qml](RecentFiles.qml) / [recent_files.py](recent_files.py) | Recent files per app from the KActivities database; also the generic command launcher |
-| [org.quickshell.dock.desktop](org.quickshell.dock.desktop) | Asks KWin for the restricted window-management interface |
-| [IconResolver.qml](IconResolver.qml) | Builds the icon fallback chain |
-| [PlasmaFavorites.qml](PlasmaFavorites.qml) | Picks the favourites source and resolves entries |
-| [KAstatsFavorites.qml](KAstatsFavorites.qml) | Reads favourites from the KActivities database |
-| [DockOrder.qml](DockOrder.qml) | Persists and merges the drag order |
-| [Ini.qml](Ini.qml) | Small KConfig/INI reader |
-| [Config.qml](Config.qml) | Defaults, per-screen overrides and persistence for every setting |
-| [scripts/install.sh](scripts/install.sh) | Install / uninstall / dependency check |
-| [scripts/dock-switch.sh](scripts/dock-switch.sh) | Switch between this dock and a native Plasma panel |
+| File                                                                    | Role                                                                                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [shell.qml](shell.qml)                                                  | Entry point; one dock per screen                                                                                                |
+| [Dock.qml](Dock.qml)                                                    | The panel: layer-shell window, list, drag-reorder wiring, wave engine, auto-hide, overflow scrolling, tooltip                   |
+| [DockIcon.qml](DockIcon.qml)                                            | One app cell's visuals — icon, hover zoom, launch bounce, running dot                                                           |
+| [WindowCard.qml](WindowCard.qml)                                        | One window card in an expanded multi-window app                                                                                 |
+| [UtilityCell.qml](UtilityCell.qml)                                      | The circular-plate Trash and Settings cells                                                                                     |
+| [CircleIcon.qml](CircleIcon.qml)                                        | App icon clipped to uniform circle or squircle (rounded square) on a light/dark plate (`iconShape`: circle, squircle, original) |
+| [FolderDockIcon.qml](FolderDockIcon.qml)                                | Application folder cell with adaptive 2x2/3x3 mini grid preview and smooth liquid glass plate                                   |
+| [Theme.qml](Theme.qml)                                                  | Shared neutral colour tokens; accent follows the KDE accent colour from `kdeglobals` (live)                                     |
+| [TrashMenu.qml](TrashMenu.qml)                                          | Trash right-click menu with the empty confirmation                                                                              |
+| [ContextMenu.qml](ContextMenu.qml)                                      | Per-app right-click menu: recent files, actions, pin/unpin                                                                      |
+| [SettingsPanel.qml](SettingsPanel.qml)                                  | The settings popup behind the gear cell                                                                                         |
+| [Tasks.qml](Tasks.qml)                                                  | What's running, via Plasma's libtaskmanager; raise, minimize, close, new instance, window list                                  |
+| [Trash.qml](Trash.qml)                                                  | Trash item count, open and empty, through KIO                                                                                   |
+| [RecentFiles.qml](RecentFiles.qml) / [recent_files.py](recent_files.py) | Recent files per app from the KActivities database; also the generic command launcher                                           |
+| [org.quickshell.dock.desktop](org.quickshell.dock.desktop)              | Asks KWin for the restricted window-management interface                                                                        |
+| [IconResolver.qml](IconResolver.qml)                                    | Builds the icon fallback chain                                                                                                  |
+| [PlasmaFavorites.qml](PlasmaFavorites.qml)                              | Picks the favourites source and resolves entries                                                                                |
+| [KAstatsFavorites.qml](KAstatsFavorites.qml)                            | Reads favourites from the KActivities database                                                                                  |
+| [DockOrder.qml](DockOrder.qml)                                          | Persists and merges the drag order                                                                                              |
+| [Ini.qml](Ini.qml)                                                      | Small KConfig/INI reader                                                                                                        |
+| [Config.qml](Config.qml)                                                | Defaults, per-screen overrides and persistence for every setting                                                                |
+| [scripts/install.sh](scripts/install.sh)                                | Install / uninstall / dependency check                                                                                          |
+| [scripts/dock-switch.sh](scripts/dock-switch.sh)                        | Switch between this dock and a native Plasma panel                                                                              |
 
 ## Notes
 

@@ -43,6 +43,7 @@ PanelWindow {
     readonly property bool glassHighlight: Config.getVal(screenName, "glassHighlight")
     readonly property bool shadowEnabled: Config.getVal(screenName, "shadowEnabled")
     readonly property bool showTrash: Config.getVal(screenName, "showTrash")
+    readonly property bool showDrawer: Config.getVal(screenName, "showDrawer") ?? true
     readonly property bool circularIcons: Config.getVal(screenName, "circularIcons")
     readonly property string iconShape: Config.getVal(screenName, "iconShape") || (circularIcons ? "circle" : "original")
     readonly property bool showRunningApps: Config.getVal(screenName, "showRunningApps")
@@ -169,7 +170,9 @@ PanelWindow {
     readonly property int shelfSectionWidth: animShelfWidth > 0 ? (Math.round(animShelfWidth) + separatorTotalWidth) : 0
     readonly property int trashWidth: showTrash ? cellSize : 0
     readonly property int trashGap: showTrash ? spacing : 0
-    readonly property int rightSectionWidth: separatorTotalWidth + shelfSectionWidth + trashWidth + trashGap + cellSize
+    readonly property int drawerWidth: showDrawer ? cellSize : 0
+    readonly property int drawerGap: showDrawer ? spacing : 0
+    readonly property int rightSectionWidth: separatorTotalWidth + shelfSectionWidth + trashWidth + trashGap + cellSize + drawerGap + drawerWidth
 
     // Screen Boundary & Scrollable Container Max Width Clamping
     readonly property int maxPlateWidth: {
@@ -180,13 +183,13 @@ PanelWindow {
 
     readonly property int naturalPlateWidth: Math.max(
         cellSize + dockPadding * 2,
-        appsWidth + (appsWidth > 0 ? rightSectionWidth : (trashWidth + trashGap + cellSize)) + dockPadding * 2)
+        appsWidth + (appsWidth > 0 ? rightSectionWidth : (trashWidth + trashGap + cellSize + drawerGap + drawerWidth)) + dockPadding * 2)
 
     readonly property bool isOverflowing: naturalPlateWidth > maxPlateWidth
     readonly property int plateWidth: isOverflowing ? maxPlateWidth : naturalPlateWidth
     onIsOverflowingChanged: Qt.callLater(scrollListBy, 0)
 
-    readonly property int availableAppsWidth: Math.max(cellSize, plateWidth - dockPadding * 2 - (appsWidth > 0 ? rightSectionWidth : (trashWidth + trashGap + cellSize)))
+    readonly property int availableAppsWidth: Math.max(cellSize, plateWidth - dockPadding * 2 - (appsWidth > 0 ? rightSectionWidth : (trashWidth + trashGap + cellSize + drawerGap + drawerWidth)))
 
     // Move the overflowing icon list by `d` px along the dock axis, clamped to the
     // ListView's real extents (origin can be non-zero). scrollListBy(0) re-clamps.
@@ -374,6 +377,7 @@ PanelWindow {
     property bool isResizingDock: false
     property var hoveredCell: null
     property bool settingsOpen: false
+    property bool drawerOpen: false
     property var mergeTargetCell: null
     property var folderTargetCell: null
 
@@ -429,8 +433,10 @@ PanelWindow {
         || launchArea.containsMouse
         || settingsCell.hovered
         || (showTrash && trashCell.hovered)
+        || (showDrawer && drawerCell.hovered)
         || interacting
         || dock.settingsOpen
+        || dock.drawerOpen
         || contextMenu.visible
         || trashMenu.visible
         || dock.expandedAppKey !== ""
@@ -1717,7 +1723,43 @@ PanelWindow {
                 onClicked: button => {
                     if (button !== Qt.LeftButton) return;
                     dock.expandedAppKey = "";
+                    if (dock.drawerOpen) {
+                        if (drawerLoader.item && typeof drawerLoader.item.requestClose === "function") {
+                            drawerLoader.item.requestClose();
+                        } else {
+                            dock.drawerOpen = false;
+                        }
+                    }
                     dock.settingsOpen = !dock.settingsOpen;
+                }
+            }
+
+            // ---- Side Drawer Cell ----
+            UtilityCell {
+                id: drawerCell
+                dock: dock
+                waveSpace: contentRow
+                visible: dock.showDrawer
+                x: isVertical ? 0 : (settingsCell.x + (dock.showDrawer ? (dock.cellSize + dock.drawerGap) : 0))
+                y: isVertical ? (settingsCell.y + (dock.showDrawer ? (dock.cellSize + dock.drawerGap) : 0)) : 0
+                active: dock.drawerOpen
+                iconNames: ["sidebar-expand-right", "view-right-close", "pane-hide-right-symbolic", "sidebar-right", "view-sidebar", "widget", "format-justify-right"]
+                glyphPaths: [
+                    "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zm0 2v12h11V6H4zm13 0v12h3V6h-3z"
+                ]
+                onClicked: button => {
+                    if (button !== Qt.LeftButton) return;
+                    dock.expandedAppKey = "";
+                    if (dock.drawerOpen) {
+                        if (drawerLoader.item && typeof drawerLoader.item.requestClose === "function") {
+                            drawerLoader.item.requestClose();
+                        } else {
+                            dock.drawerOpen = false;
+                        }
+                    } else {
+                        if (dock.settingsOpen) dock.settingsOpen = false;
+                        dock.drawerOpen = true;
+                    }
                 }
             }
         }
@@ -1843,6 +1885,7 @@ PanelWindow {
             if (launchArea.containsMouse) return dock.launchCell;
             if (dock.showTrash && trashCell.hovered) return trashCell;
             if (settingsCell.hovered) return settingsCell;
+            if (dock.showDrawer && drawerCell.hovered) return drawerCell;
             if (resizeMouseArea.containsMouse || resizeMouseArea.resizing) return separatorItem;
             return dock.hoveredCell;
         }
@@ -1863,6 +1906,7 @@ PanelWindow {
             if (launchArea.containsMouse) return Config.newInstanceLabel;
             if (dock.showTrash && trashCell.hovered) return "废纸篓";
             if (settingsCell.hovered) return "Dock 设置";
+            if (dock.showDrawer && drawerCell.hovered) return "侧边抽屉";
             if (resizeMouseArea.containsMouse || resizeMouseArea.resizing) {
                 return resizeMouseArea.resizing ? (resizeMouseArea.dragIconSize + " px") : "拖动以调整大小";
             }
@@ -1892,7 +1936,7 @@ PanelWindow {
         readonly property string text: targetText !== "" ? targetText : activeText
 
         z: 25
-        readonly property bool shown: targetAnchor !== null && targetText !== "" && dock.revealed && !contextMenu.visible && !dock.settingsOpen && !trashMenu.visible && !folderPopup.visible && (dock.expandedAppKey === "" || dock.hoveredWindowCard !== null || dock.hoveredMultiWindowIcon !== null)
+        readonly property bool shown: targetAnchor !== null && targetText !== "" && dock.revealed && !contextMenu.visible && !dock.settingsOpen && !dock.drawerOpen && !trashMenu.visible && !folderPopup.visible && (dock.expandedAppKey === "" || dock.hoveredWindowCard !== null || dock.hoveredMultiWindowIcon !== null)
 
         visible: opacity > 0
         opacity: shown ? 1 : 0
@@ -1954,6 +1998,18 @@ PanelWindow {
             visible: dock.settingsOpen
             activeScreen: dock.screenName
             onVisibleChanged: if (!visible) dock.settingsOpen = false
+        }
+    }
+
+    Loader {
+        id: drawerLoader
+        active: dock.drawerOpen
+        sourceComponent: SideDrawer {
+            screen: dock.screen
+            visible: dock.drawerOpen
+            isLight: dock.isLight
+            onCloseRequested: dock.drawerOpen = false
+            onVisibleChanged: if (!visible) dock.drawerOpen = false
         }
     }
 

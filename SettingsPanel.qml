@@ -746,6 +746,7 @@ PanelWindow {
                         Divider {}
                         SliderRow {
                             title: "与屏幕边缘的距离"
+                            desc: root.getVal("autoHide") ? "自动隐藏开启时 Dock 贴紧边缘（固定为 0）" : ""
                             min: 0; max: 24; step: 1
                             value: root.getVal("bottomMargin"); unit: " px"
                             onModified: val => root.setVal("bottomMargin", Math.round(val))
@@ -1004,11 +1005,11 @@ PanelWindow {
                         Divider {}
                         ChoiceRow {
                             title: "图标形状"
-                            desc: "支持圆形、圆角正方形或系统主题原始样式"
+                            desc: "支持圆角正方形 (Squircle)、系统原始样式或圆形"
                             options: [
-                                { key: "circle", label: "圆形" },
-                                { key: "squircle", label: "圆角正方形" },
-                                { key: "original", label: "原始样式" }
+                                { key: "squircle", label: "圆角正方" },
+                                { key: "original", label: "原始样式" },
+                                { key: "circle", label: "圆形" }
                             ]
                             segWidth: 72
                             current: root.getVal("iconShape") || (root.getVal("circularIcons") ? "circle" : "original")
@@ -1092,6 +1093,13 @@ PanelWindow {
                         }
                         Divider {}
                         SwitchRow {
+                            title: "显示右侧抽屉图标"
+                            desc: "在 Dock 栏显示从屏幕右侧滑出抽屉的快捷图标"
+                            checked: root.getVal("showDrawer")
+                            onToggled: val => root.setVal("showDrawer", val)
+                        }
+                        Divider {}
+                        SwitchRow {
                             title: "为 Dock 预留空间"
                             desc: "最大化的窗口不会覆盖 Dock"
                             checked: root.getVal("reserveSpace")
@@ -1101,8 +1109,8 @@ PanelWindow {
 
                     Group {
                         SwitchRow {
-                            title: "显示运行指示点"
-                            desc: "在运行中的应用下方显示指示圆点"
+                            title: "显示运行指示标记"
+                            desc: "在运行中的应用边缘显示指示点，支持多窗口双点提示与系统强调色高亮"
                             checked: root.getVal("runningIndicator")
                             onToggled: val => root.setVal("runningIndicator", val)
                         }
