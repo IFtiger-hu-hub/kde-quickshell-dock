@@ -30,7 +30,11 @@ magnification, frosted glass and drag-to-reorder.
   focus/minimized state, and a close button. When the dock gets wider than the
   screen it scrolls horizontally with the wheel or touchpad.
 - **Right-click menu** per app: recent files for that app, its desktop actions,
-  new window, pin / unpin from Kickoff favourites.
+  new window, pin / unpin from Kickoff favourites, or move into application folders.
+- **App Folders (应用文件夹)**: Group applications into custom folders directly on the
+  dock. Folders display an authentic adaptive 2×2 / 3×3 mini-grid of contained app icons.
+  Clicking a folder opens a frosted-glass popup panel to launch apps, rename inline,
+  add applications via a searchable picker, or drag-and-drop apps directly into the folder.
 - **Trash** cell: click to open, right-click to empty — with a confirmation that
   shows the item count, done through KIO (see [Trash](#trash)).
 - **Settings panel** behind the gear cell for every option below, with optional

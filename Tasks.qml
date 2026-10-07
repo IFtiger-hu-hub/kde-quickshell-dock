@@ -35,6 +35,8 @@ Singleton {
     readonly property int roleChildCount: TaskManager.AbstractTasksModel.ChildCount
     readonly property int roleIsActive: TaskManager.AbstractTasksModel.IsActive
     readonly property int roleIsMinimized: TaskManager.AbstractTasksModel.IsMinimized
+    readonly property int roleScreenGeometry: TaskManager.AbstractTasksModel.ScreenGeometry
+    readonly property int roleGeometry: TaskManager.AbstractTasksModel.Geometry
 
     // key -> { row, windows, active }. Replaced wholesale on every change, so
     // reading it in a binding is enough to stay current.
@@ -129,21 +131,29 @@ Singleton {
                     const child = tasks.index(i, 0, row);
                     if (!child || !child.valid) continue;
                     const winTitle = tasks.data(child, Qt.DisplayRole) || tasks.data(child, root.roleAppName) || (rec.name ? (rec.name + " " + (i + 1)) : "");
+                    const geom = tasks.data(child, root.roleScreenGeometry);
+                    const winGeom = tasks.data(child, root.roleGeometry);
                     list.push({
                         modelIndex: child,
                         title: winTitle || (rec.name ? (rec.name + " (" + (i + 1) + ")") : "窗口"),
                         active: tasks.data(child, root.roleIsActive) === true,
                         minimized: tasks.data(child, root.roleIsMinimized) === true,
-                        icon: tasks.data(child, root.roleIcon) || rec.icon || ""
+                        icon: tasks.data(child, root.roleIcon) || rec.icon || "",
+                        screenGeometry: geom || null,
+                        geometry: winGeom || null
                     });
                 }
             } else {
+                const geom = tasks.data(row, root.roleScreenGeometry);
+                const winGeom = tasks.data(row, root.roleGeometry);
                 list.push({
                     modelIndex: row,
                     title: tasks.data(row, Qt.DisplayRole) || rec.name || cleanKey,
                     active: tasks.data(row, root.roleIsActive) === true,
                     minimized: tasks.data(row, root.roleIsMinimized) === true,
-                    icon: tasks.data(row, root.roleIcon) || rec.icon || ""
+                    icon: tasks.data(row, root.roleIcon) || rec.icon || "",
+                    screenGeometry: geom || null,
+                    geometry: winGeom || null
                 });
             }
         }

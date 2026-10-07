@@ -24,20 +24,48 @@ Singleton {
 
     // Plasma's list wins on membership, the saved list wins on position:
     // known ids first in remembered order, then anything newly favourited.
+    // Folders from DockFolders are preserved, and apps inside folders are hidden from the top-level dock.
     function merge(plasmaIds) {
         const present = ({});
         for (const id of plasmaIds) present[id] = true;
 
+        if (typeof DockFolders !== "undefined" && DockFolders.folders) {
+            for (let i = 0; i < DockFolders.folders.length; i++) {
+                const f = DockFolders.folders[i];
+                if (f && f.id) present["folder:" + f.id] = true;
+            }
+        }
+
         const keptSeen = ({});
         const kept = [];
         for (const id of root.saved) {
+            if (typeof DockFolders !== "undefined" && DockFolders.isAppInAnyFolder(id)) {
+                continue;
+            }
+
             if (present[id] && !keptSeen[id]) {
                 keptSeen[id] = true;
                 kept.push(id);
             }
         }
 
-        const added = plasmaIds.filter(id => !keptSeen[id]);
+        const added = plasmaIds.filter(id => {
+            if (keptSeen[id]) return false;
+            if (typeof DockFolders !== "undefined" && DockFolders.isAppInAnyFolder(id)) return false;
+            return true;
+        });
+
+        if (typeof DockFolders !== "undefined" && DockFolders.folders) {
+            for (let i = 0; i < DockFolders.folders.length; i++) {
+                const f = DockFolders.folders[i];
+                const tag = "folder:" + f.id;
+                if (!keptSeen[tag]) {
+                    keptSeen[tag] = true;
+                    kept.push(tag);
+                }
+            }
+        }
+
         return kept.concat(added);
     }
 

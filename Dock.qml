@@ -67,49 +67,114 @@ PanelWindow {
     // Headroom inward from the dock plate
     readonly property int headroom: isVertical
         ? Math.max(140, Math.ceil(cellSize * (hoverScale - 1)) + 40)
-        : Math.max(48, Math.ceil(cellSize * (hoverScale - 1)) + 36)
+        : Math.max(88, Math.ceil(cellSize * (hoverScale - 1)) + 58)
 
     readonly property int plateHeight: cellSize + dockPadding * 2
 
-    // ---- Inline Multi-Window Expansion State & Sizing ----
+    // ---- Dedicated Multi-Window Shelf State & Sizing ----
     property string expandedAppKey: ""
+    property var hoveredWindowCard: null
+    property var hoveredMultiWindowIcon: null
+    property var hoveredMultiWindowIconAnchor: null
     readonly property int cardWidth: 230
-    readonly property int cardHeight: Math.max(38, cellSize - 6)
-    // Card shelf geometry: shelfGap between the app icon and the first card,
-    // shelfTail after the last card (so the visible gap to the next icon,
-    // tail + list spacing, matches shelfGap). Both are part of the cell.
-    readonly property int shelfGap: 14
-    readonly property int shelfTail: Math.max(4, shelfGap - spacing)
-    function shelfLength(count, cardLen) {
-        return count > 1 ? shelfGap + count * cardLen + (count - 1) * spacing + shelfTail : 0;
+    readonly property int cardHeight: Math.max(36, iconSize)
+
+    // Current apps with multiple windows (windowCount >= 2)
+    readonly property var multiWindowApps: {
+        Tasks.revision;
+        const list = [];
+        if (!Tasks.apps) return list;
+        const keys = Object.keys(Tasks.apps);
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            const count = Tasks.windowCount(key);
+            if (count > 1) {
+                const entry = Tasks.resolveEntry(key);
+                const appRec = Tasks.apps[key];
+                list.push({
+                    key: key,
+                    appId: (appRec && appRec.appId) ? appRec.appId : key,
+                    entry: entry || { id: key, icon: (appRec ? appRec.icon : key), name: (appRec ? appRec.name : key) },
+                    name: (entry && entry.name) ? entry.name : (appRec && appRec.name ? appRec.name : key),
+                    icon: (entry && entry.icon) ? entry.icon : (appRec && appRec.icon ? appRec.icon : key),
+                    windows: count,
+                    active: appRec ? Boolean(appRec.active) : false
+                });
+            }
+        }
+        return list;
     }
-    readonly property int expandedExtraWidth: {
-        if (!expandedAppKey) return 0;
-        return shelfLength(Tasks.windowCount(expandedAppKey), isVertical ? cardHeight : cardWidth);
+
+    readonly property var expandedWindowList: {
+        Tasks.revision;
+        return expandedAppKey !== "" ? Tasks.getWindows(expandedAppKey) : [];
     }
-    property real animExpandedExtraWidth: 0
-    onExpandedExtraWidthChanged: animExpandedExtraWidth = expandedExtraWidth
-    Behavior on animExpandedExtraWidth {
-        NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+
+    onExpandedWindowListChanged: {
+        if (expandedAppKey !== "" && expandedWindowList.length <= 1) {
+            expandedAppKey = "";
+        }
+    }
+
+    onMultiWindowAppsChanged: {
+        if (expandedAppKey !== "") {
+            let found = false;
+            for (let i = 0; i < multiWindowApps.length; i++) {
+                if (multiWindowApps[i].key === expandedAppKey) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                expandedAppKey = "";
+            }
+        }
+    }
+
+    // Width/Height along main dock axis for multi-window app icons
+    readonly property int multiWindowIconsWidth: multiWindowApps.length > 0
+        ? (multiWindowApps.length * cellSize + (multiWindowApps.length - 1) * spacing)
+        : 0
+
+    // Width/Height along main dock axis for expanded window cards
+    readonly property int multiWindowCardsWidth: (expandedAppKey !== "" && expandedWindowList.length > 1)
+        ? (expandedWindowList.length * (isVertical ? cardHeight : cardWidth) + (expandedWindowList.length - 1) * spacing)
+        : 0
+
+    // Total target extent along main axis (width for horizontal, height for vertical)
+    readonly property int targetShelfWidth: {
+        if (multiWindowApps.length === 0) return 0;
+        let w = multiWindowIconsWidth;
+        if (multiWindowCardsWidth > 0) {
+            w += spacing + multiWindowCardsWidth;
+        }
+        return w;
+    }
+
+    property real animShelfWidth: 0
+    onTargetShelfWidthChanged: animShelfWidth = targetShelfWidth
+    Behavior on animShelfWidth {
+        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
     }
 
     readonly property int baseAppsWidth: orderModel.count > 0
         ? (orderModel.count * cellSize + Math.max(0, orderModel.count - 1) * spacing)
         : 0
-    readonly property int appsWidth: baseAppsWidth + Math.round(animExpandedExtraWidth)
+    readonly property int appsWidth: baseAppsWidth
 
     readonly property int separatorWidth: 1
     readonly property int separatorMargin: Math.max(5, spacing * 1.5)
     readonly property int separatorTotalWidth: separatorMargin * 2 + separatorWidth
+    readonly property int shelfSectionWidth: animShelfWidth > 0 ? (Math.round(animShelfWidth) + separatorTotalWidth) : 0
     readonly property int trashWidth: showTrash ? cellSize : 0
     readonly property int trashGap: showTrash ? spacing : 0
-    readonly property int rightSectionWidth: separatorTotalWidth + trashWidth + trashGap + cellSize
+    readonly property int rightSectionWidth: separatorTotalWidth + shelfSectionWidth + trashWidth + trashGap + cellSize
 
     // Screen Boundary & Scrollable Container Max Width Clamping
     readonly property int maxPlateWidth: {
         const sw = screen ? screen.width : 1920;
         const sh = screen ? screen.height : 1080;
-        return isVertical ? Math.round(sh * 0.88) : Math.round(sw * 0.88);
+        return isVertical ? Math.round(sh * 0.84) : Math.round(sw * 0.88);
     }
 
     readonly property int naturalPlateWidth: Math.max(
@@ -150,6 +215,7 @@ PanelWindow {
     readonly property int gap: autoHide ? 0 : bottomMargin
     readonly property bool cornersActive: edgeCorners && gap === 0
     readonly property int cornerSizeVal: cornersActive ? cornerSize : 0
+    readonly property int shadowBleed: dock.shadowEnabled ? 28 : 0
     readonly property int hiddenOffset: plateHeight - peekHeight
 
     readonly property real slideProgress: {
@@ -304,8 +370,11 @@ PanelWindow {
 
     property bool revealed: !autoHide
     property bool interacting: false
+    property bool isResizingDock: false
     property var hoveredCell: null
     property bool settingsOpen: false
+    property var mergeTargetCell: null
+    property var folderTargetCell: null
 
     // ---- Continuous Parabolic Wave Engine --------------------------------
     property real pointerPos: -10000
@@ -323,10 +392,32 @@ PanelWindow {
 
     Timer {
         id: waveLeaveTimer
-        interval: 90
+        interval: 160
         onTriggered: {
+            if (launchArea.containsMouse) return;
             dock.pointerInside = false;
             dock.pointerPos = -10000;
+            if (dock.hoveredCell && !bodyHover.hovered && !launchArea.containsMouse) {
+                dock.hoveredCell = null;
+            }
+        }
+    }
+
+    Timer {
+        id: collapseTimer
+        interval: 1500
+        onTriggered: {
+            if (dock.expandedAppKey !== "" && !dock.pointerInside && dock.hoveredWindowCard === null) {
+                dock.expandedAppKey = "";
+            }
+        }
+    }
+
+    onPointerInsideChanged: {
+        if (!pointerInside && dock.expandedAppKey !== "") {
+            collapseTimer.restart();
+        } else if (pointerInside) {
+            collapseTimer.stop();
         }
     }
 
@@ -342,6 +433,7 @@ PanelWindow {
         || contextMenu.visible
         || trashMenu.visible
         || dock.expandedAppKey !== ""
+        || (typeof folderPopup !== "undefined" && folderPopup.visible)
 
     onWantRevealedChanged: {
         if (wantRevealed) {
@@ -356,12 +448,23 @@ PanelWindow {
 
     // ---- new-instance button ---------------------------------------------
     property var launchCell: null
-    onHoveredCellChanged: if (hoveredCell) launchCell = hoveredCell;
+    onHoveredCellChanged: {
+        if (hoveredCell && hoveredCell.running && !hoveredCell.isFolder) {
+            launchCell = hoveredCell;
+        } else if (hoveredCell && (!hoveredCell.running || hoveredCell.isFolder)) {
+            // Hovered an app that is not running or a folder:
+            // Instantly hide launcher and clear launchCell so + button never flashes on non-running icons or folders
+            dock.launchShown = false;
+            launchTimer.stop();
+            launchCell = null;
+        }
+    }
 
     readonly property bool launchWanted: newInstanceButton
         && revealed
         && launchCell !== null
-        && launchCell.running
+        && !launchCell.isFolder
+        && Boolean(launchCell.running)
         && (hoveredCell === launchCell || launchArea.containsMouse)
         && dock.expandedAppKey === ""
 
@@ -404,8 +507,8 @@ PanelWindow {
     margins.left: 0
     margins.right: 0
 
-    implicitWidth: isVertical ? (plateHeight + headroom + gap) : (plateWidth + cornerSizeVal * 2)
-    implicitHeight: isVertical ? (plateWidth + cornerSizeVal * 2) : (plateHeight + headroom + gap)
+    implicitWidth: isVertical ? (plateHeight + headroom + gap) : (plateWidth + cornerSizeVal * 2 + shadowBleed * 2)
+    implicitHeight: isVertical ? (plateWidth + cornerSizeVal * 2 + shadowBleed * 2) : (plateHeight + headroom + gap)
 
     color: "transparent"
 
@@ -417,12 +520,16 @@ PanelWindow {
     readonly property int plateTop: body.y + plate.y
 
     mask: Region {
-        x: isLeft ? 0 : isRight ? Math.min(body.x + plate.x, dock.width - Math.max(peekHeight, triggerHeight)) : body.x
-        y: isTop ? 0 : isBottom ? Math.min(body.y + plate.y, dock.height - Math.max(peekHeight, triggerHeight)) : body.y
-        width: isLeft ? Math.max(body.x + plate.x + dock.plateHeight, Math.max(peekHeight, triggerHeight))
+        x: dock.isResizingDock ? 0
+             : isLeft ? 0 : isRight ? Math.min(body.x + plate.x, dock.width - Math.max(peekHeight, triggerHeight)) : body.x
+        y: dock.isResizingDock ? 0
+             : isTop ? 0 : isBottom ? Math.min(body.y + plate.y, dock.height - Math.max(peekHeight, triggerHeight)) : body.y
+        width: dock.isResizingDock ? dock.width
+             : isLeft ? Math.max(body.x + plate.x + dock.plateHeight, Math.max(peekHeight, triggerHeight))
              : isRight ? (dock.width - x)
              : body.width
-        height: isTop ? Math.max(body.y + plate.y + dock.plateHeight, Math.max(peekHeight, triggerHeight))
+        height: dock.isResizingDock ? dock.height
+              : isTop ? Math.max(body.y + plate.y + dock.plateHeight, Math.max(peekHeight, triggerHeight))
               : isBottom ? (dock.height - y)
               : body.height
 
@@ -437,7 +544,10 @@ PanelWindow {
 
     // Background blur via KWin, rounded to the plate so no square corners show
     BackgroundEffect.blurRegion: Region {
-        item: plate
+        x: Math.round(body.x + plate.x)
+        y: Math.round(body.y + plate.y)
+        width: Math.round(plate.width)
+        height: Math.round(plate.height)
         radius: dock.radius
     }
 
@@ -461,6 +571,11 @@ PanelWindow {
             const runningKeys = Object.keys(Tasks.apps);
             for (const key of runningKeys) {
                 if (Tasks.windowCount(key) <= 0) continue;
+
+                // If app is currently contained in an application folder, do not duplicate as standalone item
+                if (typeof DockFolders !== "undefined" && DockFolders.isAppInAnyFolder(key)) {
+                    continue;
+                }
 
                 let alreadyPresent = false;
                 for (let i = 0; i < desired.length; i++) {
@@ -503,9 +618,15 @@ PanelWindow {
         const ids = [];
         for (let i = 0; i < orderModel.count; i++) {
             const id = orderModel.get(i).appId;
-            if (favIds[id]) ids.push(id);
+            if (favIds[id] || (typeof DockFolders !== "undefined" && DockFolders.isFolder(id))) {
+                ids.push(id);
+            }
         }
         DockOrder.save(ids);
+    }
+
+    function openFolder(cell, folderId) {
+        if (folderPopup) folderPopup.open(cell, folderId);
     }
 
     Connections {
@@ -515,6 +636,12 @@ PanelWindow {
 
     Connections {
         target: DockOrder
+        function onReadyChanged() { dock.syncModel(); }
+    }
+
+    Connections {
+        target: DockFolders
+        function onRevisionChanged() { dock.syncModel(); }
         function onReadyChanged() { dock.syncModel(); }
     }
 
@@ -537,8 +664,8 @@ PanelWindow {
     Item {
         id: body
 
-        x: isVertical ? (isRight ? dock.headroom : 0) : dock.cornerSizeVal
-        y: isVertical ? dock.cornerSizeVal : (isBottom ? dock.headroom : 0)
+        x: isVertical ? (isRight ? dock.headroom : 0) : (dock.cornerSizeVal + dock.shadowBleed)
+        y: isVertical ? (dock.cornerSizeVal + dock.shadowBleed) : (isBottom ? dock.headroom : 0)
         width: isVertical ? (dock.plateHeight + dock.gap) : dock.plateWidth
         height: isVertical ? dock.plateWidth : (dock.plateHeight + dock.gap)
 
@@ -571,14 +698,26 @@ PanelWindow {
                 NumberAnimation { duration: dock.slideDuration; easing.type: Easing.OutCubic }
             }
 
-            // ---- Ambient Drop Shadow for Floating macOS Dock ----
+            // ---- Dual-tier Ambient & Contact Shadow for Floating Dock ----
             RectangularShadow {
-                id: plateShadow
+                id: plateAmbientShadow
                 anchors.fill: parent
                 radius: dock.radius
-                offset: Qt.vector2d(isLeft ? 4 : isRight ? -4 : 0, isBottom ? 5 : isTop ? -5 : 0)
-                color: dock.isLight ? "#1f000000" : "#40000000"
-                blur: 24
+                offset: Qt.vector2d(isLeft ? 5 : isRight ? -5 : 0, isBottom ? 7 : isTop ? -7 : 0)
+                color: dock.isLight ? "#1a000000" : "#45000000"
+                blur: 32
+                spread: 0
+                visible: dock.shadowEnabled && (!dock.cornersActive || dock.gap > 0)
+                z: -2
+            }
+
+            RectangularShadow {
+                id: plateContactShadow
+                anchors.fill: parent
+                radius: dock.radius
+                offset: Qt.vector2d(isLeft ? 1.5 : isRight ? -1.5 : 0, isBottom ? 2 : isTop ? -2 : 0)
+                color: dock.isLight ? "#12000000" : "#30000000"
+                blur: 10
                 spread: 0
                 visible: dock.shadowEnabled && (!dock.cornersActive || dock.gap > 0)
                 z: -1
@@ -590,9 +729,52 @@ PanelWindow {
                 visible: !dock.cornersActive || dock.gap > 0
                 anchors.fill: parent
                 radius: dock.radius
-                color: dock.background
                 border.color: dock.border
                 border.width: dock.borderWidth
+
+                gradient: Gradient {
+                    orientation: isVertical ? Gradient.Horizontal : Gradient.Vertical
+                    GradientStop {
+                        position: 0.0
+                        color: {
+                            if (dock.isLight) {
+                                return Qt.rgba(
+                                    Math.min(1.0, dock.backgroundColor.r * 1.04 + 0.04),
+                                    Math.min(1.0, dock.backgroundColor.g * 1.04 + 0.04),
+                                    Math.min(1.0, dock.backgroundColor.b * 1.04 + 0.04),
+                                    Math.min(1.0, dock.backgroundOpacity * 1.12)
+                                );
+                            } else {
+                                return Qt.rgba(
+                                    Math.min(1.0, dock.backgroundColor.r + 0.08),
+                                    Math.min(1.0, dock.backgroundColor.g + 0.08),
+                                    Math.min(1.0, dock.backgroundColor.b + 0.10),
+                                    Math.min(1.0, dock.backgroundOpacity * 0.95)
+                                );
+                            }
+                        }
+                    }
+                    GradientStop {
+                        position: 1.0
+                        color: {
+                            if (dock.isLight) {
+                                return Qt.rgba(
+                                    dock.backgroundColor.r * 0.94,
+                                    dock.backgroundColor.g * 0.94,
+                                    dock.backgroundColor.b * 0.96,
+                                    Math.max(0.05, dock.backgroundOpacity * 0.88)
+                                );
+                            } else {
+                                return Qt.rgba(
+                                    dock.backgroundColor.r,
+                                    dock.backgroundColor.g,
+                                    dock.backgroundColor.b,
+                                    Math.min(1.0, dock.backgroundOpacity * 1.05)
+                                );
+                            }
+                        }
+                    }
+                }
 
                 // Outer hairline that separates the plate from busy wallpapers
                 Rectangle {
@@ -601,27 +783,31 @@ PanelWindow {
                     radius: parent.radius + 1
                     color: "transparent"
                     border.width: 1
-                    border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(0, 0, 0, 0.45)
+                    border.color: dock.isLight ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(0, 0, 0, 0.40)
                 }
 
-                // Optional 1px top highlight (off by default)
+                // Specular refraction rim on screen-facing edge
                 Rectangle {
-                    id: topSpecular
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.topMargin: 0.5
-                    anchors.leftMargin: Math.round(dock.radius * 0.75)
-                    anchors.rightMargin: Math.round(dock.radius * 0.75)
-                    height: 1
+                    id: specularRim
+                    anchors.top: isBottom ? parent.top : undefined
+                    anchors.bottom: isTop ? parent.bottom : undefined
+                    anchors.left: isRight ? parent.left : (isVertical ? undefined : parent.left)
+                    anchors.right: isLeft ? parent.right : (isVertical ? undefined : parent.right)
+                    anchors.topMargin: isBottom ? 0.5 : 0
+                    anchors.bottomMargin: isTop ? 0.5 : 0
+                    anchors.leftMargin: isRight ? 0.5 : Math.round(dock.radius * 0.6)
+                    anchors.rightMargin: isLeft ? 0.5 : Math.round(dock.radius * 0.6)
+                    width: isVertical ? 1 : undefined
+                    height: isVertical ? (parent.height - Math.round(dock.radius * 1.2)) : 1
+                    anchors.verticalCenter: isVertical ? parent.verticalCenter : undefined
                     radius: 0.5
-                    visible: isBottom && dock.glassHighlight
+                    visible: true
                     gradient: Gradient {
-                        orientation: Gradient.Horizontal
+                        orientation: isVertical ? Gradient.Vertical : Gradient.Horizontal
                         GradientStop { position: 0.0; color: "transparent" }
-                        GradientStop { position: 0.2; color: dock.isLight ? "#80ffffff" : "#55ffffff" }
-                        GradientStop { position: 0.5; color: dock.isLight ? "#ffffff" : "#80ffffff" }
-                        GradientStop { position: 0.8; color: dock.isLight ? "#80ffffff" : "#55ffffff" }
+                        GradientStop { position: 0.25; color: dock.isLight ? "#60ffffff" : "#40ffffff" }
+                        GradientStop { position: 0.5; color: dock.isLight ? "#a0ffffff" : "#70ffffff" }
+                        GradientStop { position: 0.75; color: dock.isLight ? "#60ffffff" : "#40ffffff" }
                         GradientStop { position: 1.0; color: "transparent" }
                     }
                 }
@@ -740,34 +926,26 @@ PanelWindow {
                         required property int index
                         required property string appId
 
-                        readonly property var entry: dock.entryMap[appId] ?? Tasks.resolveEntry(appId) ?? null
-                        readonly property string taskKey: Tasks.key(entry ? entry.id : appId)
-                        readonly property int windows: Tasks.windowCount(taskKey)
-                        readonly property bool active: Tasks.isActive(taskKey)
+                        readonly property bool isFolder: typeof DockFolders !== "undefined" && DockFolders.isFolder(appId)
+                        readonly property string folderId: isFolder ? DockFolders.extractFolderId(appId) : ""
+                        readonly property var folderData: isFolder ? DockFolders.getFolder(folderId) : null
+
+                        readonly property var entry: isFolder ? null : (dock.entryMap[appId] ?? Tasks.resolveEntry(appId) ?? null)
+                        readonly property string taskKey: isFolder ? "" : Tasks.key(entry ? entry.id : appId)
+                        readonly property int windows: isFolder ? DockFolders.folderWindowCount(folderId) : Tasks.windowCount(taskKey)
+                        readonly property bool active: isFolder ? DockFolders.folderIsActive(folderId) : Tasks.isActive(taskKey)
                         readonly property bool running: windows > 0
 
-                        readonly property bool isExpanded: dock.expandedAppKey === cell.taskKey && cell.windows > 1
-                        readonly property var windowList: {
-                            Tasks.revision;
-                            return isExpanded ? Tasks.getWindows(cell.taskKey) : [];
-                        }
+                        readonly property bool isExpanded: (!cell.isFolder && dock.expandedAppKey === cell.taskKey && cell.windows > 1)
+                            || (cell.isFolder && typeof DockFolders !== "undefined" && DockFolders.folderContainsApp(cell.folderId, dock.expandedAppKey))
 
-                        readonly property int targetWidth: isVertical
-                            ? dock.cellSize
-                            : (dock.cellSize + (isExpanded ? dock.shelfLength(windowList.length, dock.cardWidth) : 0))
-                        readonly property int targetHeight: isVertical
-                            ? (dock.cellSize + (isExpanded ? dock.shelfLength(windowList.length, dock.cardHeight) : 0))
-                            : dock.cellSize
+                        property bool dragOverFolder: false
+                        property bool dragMergeTarget: false
+                        property real lastClickTime: 0
+                        property real lastLaunchTime: 0
 
-                        width: targetWidth
-                        height: targetHeight
-
-                        Behavior on width {
-                            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                        }
-                        Behavior on height {
-                            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                        }
+                        width: dock.cellSize
+                        height: dock.cellSize
 
                         property int dragIndex: index
 
@@ -783,7 +961,7 @@ PanelWindow {
                             : 0
 
                         readonly property real targetScale: isExpanded
-                            ? (1.0 + waveFactor * 0.10)
+                            ? (1.0 + waveFactor * 0.15)
                             : (1.0 + waveFactor * (dock.hoverScale - 1.0))
 
                         // Edge-guard offset: when an icon magnifies near the start or end of the
@@ -818,23 +996,6 @@ PanelWindow {
 
                         z: Math.round(targetScale * 100)
 
-                        // Card shelf avoidance: when the icon right after this shelf is
-                        // magnified, slide the cards back so they keep clear of it.
-                        readonly property real nextIconCenter: cellCenterPos + (isVertical ? cell.height : cell.width) + dock.spacing
-                        readonly property real nextWave: {
-                            if (!isExpanded || index >= list.count - 1 || !dock.pointerInside || !dock.hoverMagnify) return 0;
-                            const d = Math.abs(dock.pointerPos - nextIconCenter);
-                            return d < waveInfluence ? 0.5 * (1 + Math.cos(Math.PI * d / waveInfluence)) : 0;
-                        }
-                        readonly property real shelfAvoidTarget: {
-                            const growth = dock.iconSize * nextWave * (dock.hoverScale - 1) / 2;
-                            const clearance = dock.shelfTail + dock.spacing + dock.cellPadding;
-                            const room = dock.shelfGap + dock.cellPadding - 6;
-                            return Math.max(0, Math.min(room, growth + 8 - clearance));
-                        }
-                        property real shelfAvoid: shelfAvoidTarget
-                        Behavior on shelfAvoid { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
-
                         function returnHome() {
                             content.x = 0;
                             content.y = 0;
@@ -868,39 +1029,105 @@ PanelWindow {
                         Component.onCompleted: Qt.callLater(publishIconGeometry)
 
                         DropArea {
+                            id: cellDropArea
                             width: dock.cellSize
                             height: dock.cellSize
                             keys: ["quickshell-dock-icon"]
 
-                            onEntered: drag => {
+                            Timer {
+                                id: mergeDwellTimer
+                                interval: 80
+                                onTriggered: {
+                                    if (cellDropArea.containsDrag && !cell.isFolder) {
+                                        cell.dragMergeTarget = true;
+                                        dock.mergeTargetCell = cell;
+                                        dock.folderTargetCell = null;
+                                    }
+                                }
+                            }
+
+                            function handleDragProgress(drag) {
+                                if (!drag.source || drag.source === cell || drag.source.appId === cell.appId) return;
+
                                 const from = drag.source.dragIndex;
                                 const to = cell.index;
-                                if (from >= 0 && from !== to) {
-                                    orderModel.move(from, to, 1);
+                                if (from < 0) return;
+
+                                const pos = isVertical ? drag.y : drag.x;
+                                const total = isVertical ? height : width;
+                                const ratio = Math.max(0, Math.min(1, pos / Math.max(1, total)));
+
+                                const isSourceApp = !drag.source.isFolder;
+                                const isTargetFolder = cell.isFolder;
+
+                                // Center zone: 20% to 80% of cell extent
+                                const inCenterZone = (ratio >= 0.20 && ratio <= 0.80);
+
+                                if (inCenterZone) {
+                                    if (isTargetFolder && isSourceApp) {
+                                        cell.dragOverFolder = true;
+                                        cell.dragMergeTarget = false;
+                                        dock.folderTargetCell = cell;
+                                        dock.mergeTargetCell = null;
+                                        mergeDwellTimer.stop();
+                                    } else if (!isTargetFolder && isSourceApp && from !== to) {
+                                        cell.dragOverFolder = false;
+                                        dock.folderTargetCell = null;
+                                        dock.mergeTargetCell = cell;
+                                        if (!cell.dragMergeTarget && !mergeDwellTimer.running) {
+                                            mergeDwellTimer.restart();
+                                        }
+                                    }
+                                    // In center zone: DO NOT REORDER! Keep item steady so user can drop or dwell!
+                                    return;
                                 }
+
+                                // Outside center zone: cancel merge target
+                                cell.dragOverFolder = false;
+                                cell.dragMergeTarget = false;
+                                if (dock.mergeTargetCell === cell) dock.mergeTargetCell = null;
+                                if (dock.folderTargetCell === cell) dock.folderTargetCell = null;
+                                mergeDwellTimer.stop();
+
+                                // Reorder when dragging through to the far side of the item:
+                                if (from !== to) {
+                                    const movingForward = from < to;
+                                    const crossedThreshold = movingForward ? (ratio > 0.82) : (ratio < 0.18);
+                                    if (crossedThreshold) {
+                                        orderModel.move(from, to, 1);
+                                        if (drag.source) drag.source.dragIndex = to;
+                                    }
+                                }
+                            }
+
+                            onPositionChanged: drag => handleDragProgress(drag)
+                            onEntered: drag => handleDragProgress(drag)
+
+                            onExited: {
+                                cell.dragOverFolder = false;
+                                cell.dragMergeTarget = false;
+                                if (dock.mergeTargetCell === cell) dock.mergeTargetCell = null;
+                                if (dock.folderTargetCell === cell) dock.folderTargetCell = null;
+                                mergeDwellTimer.stop();
                             }
                         }
 
-                        readonly property string resolvedIcon: content.iconSource
+                        readonly property string resolvedIcon: cell.isFolder ? "" : appContent.iconSource
 
-                        DockIcon {
+                        Item {
                             id: content
-                            dockRef: dock
-                            isExpanded: cell.isExpanded
+
+                            function launch() {
+                                if (!cell.isFolder && appContent) appContent.launch();
+                            }
 
                             width: dock.cellSize
                             height: dock.cellSize
 
-                            entry: cell.entry
-                            hovered: dragArea.containsMouse
-                            dragging: dragArea.drag.active
-                            windows: cell.windows
-                            active: cell.active
-
-                            currentScale: cell.targetScale
-                            liftY: cell.waveLiftY
-                            liftX: cell.waveLiftX
-                            pressed: dragArea.pressed && !dragArea.drag.active
+                            scale: cell.dragMergeTarget ? 0.88 : (dragArea.drag.active ? 1.08 : 1.0)
+                            Behavior on scale {
+                                NumberAnimation { duration: 160; easing.type: Easing.OutBack }
+                            }
 
                             Drag.active: dragArea.drag.active
                             Drag.source: cell
@@ -921,6 +1148,69 @@ PanelWindow {
                             Behavior on y {
                                 enabled: !dragArea.drag.active
                                 NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                            }
+
+                            DockIcon {
+                                id: appContent
+                                visible: !cell.isFolder
+                                anchors.fill: parent
+                                dockRef: dock
+                                isExpanded: cell.isExpanded
+
+                                entry: cell.entry
+                                hovered: dragArea.containsMouse
+                                dragging: dragArea.drag.active
+                                windows: cell.windows
+                                active: cell.active
+
+                                currentScale: cell.targetScale
+                                liftY: cell.waveLiftY
+                                liftX: cell.waveLiftX
+                                pressed: dragArea.pressed && !dragArea.drag.active
+                            }
+
+                            FolderDockIcon {
+                                id: folderContent
+                                visible: cell.isFolder
+                                anchors.fill: parent
+                                dockRef: dock
+                                folderId: cell.folderId
+                                isExpanded: cell.isExpanded
+
+                                hovered: dragArea.containsMouse
+                                dragging: dragArea.drag.active
+                                dragHoverTarget: cell.dragOverFolder
+                                windows: cell.windows
+                                active: cell.active
+
+                                currentScale: cell.targetScale
+                                liftY: cell.waveLiftY
+                                liftX: cell.waveLiftX
+                                pressed: dragArea.pressed && !dragArea.drag.active
+                            }
+
+                            // Frosted luminous halo when another app icon is dragged over this app to merge into a folder
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: Math.round(dock.iconSize * cell.targetScale + 8)
+                                height: Math.round(dock.iconSize * cell.targetScale + 8)
+                                radius: width / 2
+                                visible: cell.dragMergeTarget
+                                color: dock.isLight ? Qt.rgba(0.2, 0.45, 0.95, 0.20) : Qt.rgba(0.3, 0.6, 1.0, 0.28)
+                                border.color: dock.isLight ? "#2563eb" : "#60a5fa"
+                                border.width: 2
+                                z: 30
+
+                                Behavior on opacity { NumberAnimation { duration: 140 } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 3
+                                    radius: width / 2
+                                    color: "transparent"
+                                    border.color: dock.isLight ? Qt.rgba(37, 99, 235, 0.4) : Qt.rgba(96, 165, 250, 0.4)
+                                    border.width: 1
+                                }
                             }
                         }
 
@@ -950,7 +1240,11 @@ PanelWindow {
                             }
 
                             onExited: {
-                                if (dock.hoveredCell === cell) dock.hoveredCell = null;
+                                if (dock.hoveredCell === cell) {
+                                    if (!dock.launchShown || dock.launchCell !== cell) {
+                                        dock.hoveredCell = null;
+                                    }
+                                }
                                 dock.schedulePointerLeave();
                             }
 
@@ -973,6 +1267,32 @@ PanelWindow {
                             onReleased: mouse => {
                                 dock.interacting = false;
                                 if (didDrag) {
+                                    // 1. Check if dropped onto an existing folder
+                                    if (dock.folderTargetCell && !cell.isFolder) {
+                                        const targetFolder = dock.folderTargetCell;
+                                        dock.folderTargetCell = null;
+                                        targetFolder.dragOverFolder = false;
+                                        DockFolders.addAppToFolder(targetFolder.folderId, cell.appId);
+                                        dock.expandedAppKey = "";
+                                        Qt.callLater(cell.returnHome);
+                                        return;
+                                    }
+
+                                    // 2. Check if dropped onto another app to merge into a new folder
+                                    if (dock.mergeTargetCell && !cell.isFolder) {
+                                        const target = dock.mergeTargetCell;
+                                        dock.mergeTargetCell = null;
+                                        target.dragMergeTarget = false;
+                                        const targetApp = target.appId;
+                                        const draggedApp = cell.appId;
+                                        if (targetApp && draggedApp && targetApp !== draggedApp) {
+                                            DockFolders.createFolder("应用文件夹", [targetApp, draggedApp], target.index);
+                                            dock.expandedAppKey = "";
+                                            Qt.callLater(cell.returnHome);
+                                            return;
+                                        }
+                                    }
+
                                     dock.expandedAppKey = "";
                                     dock.persistOrder();
                                 }
@@ -981,6 +1301,14 @@ PanelWindow {
 
                             onCanceled: {
                                 dock.interacting = false;
+                                if (dock.mergeTargetCell) {
+                                    dock.mergeTargetCell.dragMergeTarget = false;
+                                    dock.mergeTargetCell = null;
+                                }
+                                if (dock.folderTargetCell) {
+                                    dock.folderTargetCell.dragOverFolder = false;
+                                    dock.folderTargetCell = null;
+                                }
                                 Qt.callLater(cell.returnHome);
                             }
 
@@ -994,8 +1322,24 @@ PanelWindow {
                                 if (didDrag) return;
                                 if (contextMenu.visible) contextMenu.close();
 
-                                // Multiple windows -> Toggle inline expansion shelf!
+                                const now = Date.now();
+
+                                // Folder cell -> Toggle folder popup panel (debounced against rapid double-clicks)
+                                if (cell.isFolder) {
+                                    if (now - cell.lastClickTime < 300) return;
+                                    cell.lastClickTime = now;
+                                    if (folderPopup.visible && folderPopup.folderId === cell.folderId) {
+                                        folderPopup.close();
+                                    } else {
+                                        folderPopup.open(cell, cell.folderId);
+                                    }
+                                    return;
+                                }
+
+                                // Multiple windows -> Toggle inline expansion shelf (debounced against rapid double-clicks)
                                 if (cell.windows > 1) {
+                                    if (now - cell.lastClickTime < 300) return;
+                                    cell.lastClickTime = now;
                                     if (dock.expandedAppKey === cell.taskKey) {
                                         dock.expandedAppKey = "";
                                     } else {
@@ -1005,35 +1349,35 @@ PanelWindow {
                                     return;
                                 }
 
-                                // Single window or fresh launch
+                                // Single window running -> Raise / activate existing window (never launch a duplicate copy)
+                                if (cell.running) {
+                                    if (now - cell.lastClickTime < 300) return;
+                                    cell.lastClickTime = now;
+                                    dock.expandedAppKey = "";
+                                    content.launch(); // Triggers gentle raiseNudge
+
+                                    if (dock.raiseRunning) {
+                                        if (!Tasks.activate(cell.taskKey)) {
+                                            Tasks.activate(Tasks.key(cell.appId));
+                                        }
+                                        return;
+                                    }
+                                }
+
+                                // Launch fresh instance (app not running):
+                                // Strict debounce: if the app is currently launching (icon bouncing) or was clicked within 1800ms,
+                                // reject subsequent clicks to guarantee rapid clicks / double clicks only ever open ONE instance!
+                                if ((appContent && appContent.launching) || (now - cell.lastLaunchTime < 1800)) {
+                                    return;
+                                }
+
+                                cell.lastLaunchTime = now;
+                                cell.lastClickTime = now;
                                 dock.expandedAppKey = "";
                                 content.launch();
 
-                                if (dock.raiseRunning && cell.running && Tasks.activate(cell.taskKey)) return;
-                                if (cell.entry) cell.entry.execute();
-                            }
-                        }
-
-                        // Inline Window Cards Shelf (Expands to the right of the app icon)
-                        Row {
-                            id: cardsRow
-                            visible: cell.width > dock.cellSize + 10
-                            opacity: Math.max(0, Math.min(1, (cell.width - dock.cellSize) / 60))
-                            anchors.left: isVertical ? undefined : parent.left
-                            anchors.leftMargin: isVertical ? 0 : (dock.cellSize + dock.shelfGap - cell.shelfAvoid)
-                            anchors.top: isVertical ? parent.top : undefined
-                            anchors.topMargin: isVertical ? (dock.cellSize + dock.shelfGap - cell.shelfAvoid) : 0
-                            anchors.verticalCenter: isVertical ? undefined : parent.verticalCenter
-                            anchors.horizontalCenter: isVertical ? parent.horizontalCenter : undefined
-                            spacing: dock.spacing
-
-                            Repeater {
-                                model: cell.windowList
-                                delegate: WindowCard {
-                                    required property var modelData
-                                    dockRef: dock
-                                    cellRef: cell
-                                    winData: modelData
+                                if (cell.entry) {
+                                    cell.entry.execute();
                                 }
                             }
                         }
@@ -1082,14 +1426,17 @@ PanelWindow {
 
                 Rectangle {
                     anchors.centerIn: parent
-                    width: isVertical ? Math.round(dock.iconSize * 0.68) : 1
-                    height: isVertical ? 1 : Math.round(dock.iconSize * 0.68)
+                    width: isVertical ? Math.round((resizeMouseArea.resizing ? resizeMouseArea.dragIconSize : dock.iconSize) * 0.68) : (resizeMouseArea.resizing ? 2 : 1)
+                    height: isVertical ? (resizeMouseArea.resizing ? 2 : 1) : Math.round((resizeMouseArea.resizing ? resizeMouseArea.dragIconSize : dock.iconSize) * 0.68)
+                    radius: 1
                     color: resizeMouseArea.pressed
                         ? Theme.accent
                         : (dock.isLight ? Qt.rgba(0, 0, 0, resizeMouseArea.containsMouse ? 0.30 : 0.16)
                                         : Qt.rgba(1, 1, 1, resizeMouseArea.containsMouse ? 0.32 : 0.18))
 
                     Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on width { NumberAnimation { duration: 80; easing.type: Easing.OutCubic } }
+                    Behavior on height { NumberAnimation { duration: 80; easing.type: Easing.OutCubic } }
                 }
 
                 MouseArea {
@@ -1102,60 +1449,64 @@ PanelWindow {
                     anchors.bottomMargin: isVertical ? -6 : 0
 
                     hoverEnabled: true
+                    preventStealing: true
                     cursorShape: isVertical ? Qt.SplitHCursor : Qt.SplitVCursor
 
-                    property real startPressCoord: 0
+                    property real startPressPos: 0
                     property int startIconSize: 44
+                    property int dragIconSize: dock.iconSize
                     property bool resizing: false
 
                     onPressed: mouse => {
                         dock.expandedAppKey = "";
                         resizing = true;
+                        dock.isResizingDock = true;
                         dock.interacting = true;
                         startIconSize = dock.iconSize;
-                        const mapped = mapToItem(null, mouse.x, mouse.y);
-                        startPressCoord = isVertical ? mapped.x : mapped.y;
+                        dragIconSize = dock.iconSize;
+                        startPressPos = isVertical ? mouse.x : mouse.y;
                     }
 
                     onPositionChanged: mouse => {
                         if (!pressed || !resizing) return;
-                        const mapped = mapToItem(null, mouse.x, mouse.y);
-                        const currentCoord = isVertical ? mapped.x : mapped.y;
-                        const delta = currentCoord - startPressCoord;
-
-                        let change = 0;
+                        let delta = 0;
                         if (isBottom) {
-                            change = -delta;
+                            delta = startPressPos - mouse.y;
                         } else if (isTop) {
-                            change = delta;
+                            delta = mouse.y - startPressPos;
                         } else if (isLeft) {
-                            change = delta;
+                            delta = mouse.x - startPressPos;
                         } else if (isRight) {
-                            change = -delta;
+                            delta = startPressPos - mouse.x;
                         }
+                        dragIconSize = Math.max(24, Math.min(96, Math.round(startIconSize + delta)));
+                    }
 
-                        const target = Math.max(24, Math.min(96, Math.round(startIconSize + change)));
-                        if (target !== dock.iconSize) {
-                            if (Config.perScreenConfig && dock.screenName) {
-                                Config.setScreenVal(dock.screenName, "iconSize", target);
-                            } else {
-                                Config.setVal("iconSize", target);
+                    onReleased: {
+                        if (resizing) {
+                            resizing = false;
+                            dock.isResizingDock = false;
+                            dock.interacting = false;
+                            if (dragIconSize !== dock.iconSize) {
+                                if (Config.perScreenConfig && dock.screenName) {
+                                    Config.setScreenVal(dock.screenName, "iconSize", dragIconSize);
+                                } else {
+                                    Config.setVal("iconSize", dragIconSize);
+                                }
                             }
                         }
                     }
 
-                    onReleased: {
-                        resizing = false;
-                        dock.interacting = false;
-                    }
-
                     onCanceled: {
                         resizing = false;
+                        dock.isResizingDock = false;
                         dock.interacting = false;
+                        dragIconSize = dock.iconSize;
                     }
 
                     onDoubleClicked: {
                         const defSize = 44;
+                        dragIconSize = defSize;
                         if (Config.perScreenConfig && dock.screenName) {
                             Config.setScreenVal(dock.screenName, "iconSize", defSize);
                         } else {
@@ -1165,14 +1516,174 @@ PanelWindow {
                 }
             }
 
+            // ---- Dedicated Multi-Window Shelf Section ----
+            Item {
+                id: shelfSection
+                visible: dock.animShelfWidth > 0.5
+                opacity: Math.max(0, Math.min(1, dock.animShelfWidth / 40))
+                clip: visible && (isVertical ? height > 0 : width > 0)
+
+                x: isVertical ? 0 : (list.width + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0))
+                y: isVertical ? (list.height + (dock.appsWidth > 0 ? dock.separatorTotalWidth : 0)) : 0
+                width: isVertical ? dock.cellSize : Math.max(0, Math.round(dock.animShelfWidth))
+                height: isVertical ? Math.max(0, Math.round(dock.animShelfWidth)) : dock.cellSize
+
+                // 1. Multi-Window App Icons Container
+                Item {
+                    id: multiWindowIconsContainer
+                    visible: dock.multiWindowApps.length > 0
+                    x: 0
+                    y: 0
+                    width: isVertical ? dock.cellSize : dock.multiWindowIconsWidth
+                    height: isVertical ? dock.multiWindowIconsWidth : dock.cellSize
+
+                    Grid {
+                        anchors.fill: parent
+                        columns: isVertical ? 1 : dock.multiWindowApps.length
+                        rows: isVertical ? dock.multiWindowApps.length : 1
+                        spacing: dock.spacing
+
+                        Repeater {
+                            model: dock.multiWindowApps
+                            delegate: Item {
+                                id: mwCell
+                                required property var modelData
+                                width: dock.cellSize
+                                height: dock.cellSize
+
+                                readonly property bool isExpanded: dock.expandedAppKey === modelData.key
+
+                                DockIcon {
+                                    id: mwIcon
+                                    anchors.centerIn: parent
+                                    width: dock.cellSize
+                                    height: dock.cellSize
+                                    dockRef: dock
+                                    isExpanded: mwCell.isExpanded
+                                    entry: modelData.entry
+                                    windows: modelData.windows
+                                    active: modelData.active
+                                    hovered: mwMouseArea.containsMouse
+                                    pressed: mwMouseArea.pressed
+
+                                    scale: mwMouseArea.containsMouse ? 1.08 : 1.0
+                                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                                }
+
+                                // Frosted Window Count Badge
+                                Rectangle {
+                                    anchors.top: parent.top
+                                    anchors.right: parent.right
+                                    anchors.topMargin: Math.max(3, Math.round((dock.cellSize - dock.iconSize) / 2) - 1)
+                                    anchors.rightMargin: Math.max(3, Math.round((dock.cellSize - dock.iconSize) / 2) - 1)
+                                    width: Math.max(16, mwBadgeText.implicitWidth + 8)
+                                    height: 16
+                                    radius: 8
+                                    color: mwCell.isExpanded
+                                        ? (dock.isLight ? Qt.rgba(0.15, 0.45, 0.95, 0.85) : Qt.rgba(0.25, 0.55, 1.0, 0.85))
+                                        : (dock.isLight ? Qt.rgba(0, 0, 0, 0.60) : Qt.rgba(255, 255, 255, 0.28))
+                                    border.color: dock.isLight ? Qt.rgba(255, 255, 255, 0.5) : Qt.rgba(0, 0, 0, 0.35)
+                                    border.width: 1
+                                    z: 25
+
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                                    Text {
+                                        id: mwBadgeText
+                                        anchors.centerIn: parent
+                                        text: String(modelData.windows)
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: "#ffffff"
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: mwMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+
+                                    onEntered: {
+                                        dock.hoveredMultiWindowIcon = modelData;
+                                        dock.hoveredMultiWindowIconAnchor = mwCell;
+                                    }
+                                    onExited: {
+                                        if (dock.hoveredMultiWindowIcon === modelData) {
+                                            dock.hoveredMultiWindowIcon = null;
+                                            dock.hoveredMultiWindowIconAnchor = null;
+                                        }
+                                    }
+                                    onClicked: {
+                                        if (dock.expandedAppKey === modelData.key) {
+                                            dock.expandedAppKey = "";
+                                        } else {
+                                            dock.expandedAppKey = modelData.key;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Expanded Window Cards Container
+                Item {
+                    id: multiWindowCardsContainer
+                    visible: dock.expandedAppKey !== "" && dock.expandedWindowList.length > 1
+                    opacity: visible ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 160 } }
+
+                    x: isVertical ? 0 : (dock.multiWindowIconsWidth + (dock.multiWindowIconsWidth > 0 ? dock.spacing : 0))
+                    y: isVertical ? (dock.multiWindowIconsWidth + (dock.multiWindowIconsWidth > 0 ? dock.spacing : 0)) : 0
+                    width: isVertical ? dock.cellSize : dock.multiWindowCardsWidth
+                    height: isVertical ? dock.multiWindowCardsWidth : dock.cellSize
+
+                    Grid {
+                        anchors.centerIn: parent
+                        columns: isVertical ? 1 : dock.expandedWindowList.length
+                        rows: isVertical ? dock.expandedWindowList.length : 1
+                        spacing: dock.spacing
+
+                        Repeater {
+                            model: (shelfSection.visible && dock.expandedAppKey !== "") ? dock.expandedWindowList : []
+                            delegate: WindowCard {
+                                required property var modelData
+                                dockRef: dock
+                                cellRef: null
+                                winData: modelData
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- Shelf Etched Glass Separator (between Shelf and Trash/Settings) ----
+            Item {
+                id: shelfSeparator
+                visible: dock.animShelfWidth > 0.5
+                x: isVertical ? 0 : (shelfSection.x + (dock.animShelfWidth > 0 ? Math.round(dock.animShelfWidth) : 0))
+                y: isVertical ? (shelfSection.y + (dock.animShelfWidth > 0 ? Math.round(dock.animShelfWidth) : 0)) : 0
+                width: isVertical ? dock.cellSize : (dock.animShelfWidth > 0 ? dock.separatorTotalWidth : 0)
+                height: isVertical ? (dock.animShelfWidth > 0 ? dock.separatorTotalWidth : 0) : dock.cellSize
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    visible: parent.visible
+                    width: isVertical ? Math.round(dock.iconSize * 0.68) : 1
+                    height: isVertical ? 1 : Math.round(dock.iconSize * 0.68)
+                    color: dock.isLight ? Qt.rgba(0, 0, 0, 0.16) : Qt.rgba(1, 1, 1, 0.18)
+                }
+            }
+
             // ---- Trash Cell ----
             UtilityCell {
                 id: trashCell
                 dock: dock
                 waveSpace: contentRow
                 visible: dock.showTrash
-                x: isVertical ? 0 : (list.width + (list.width > 0 ? dock.separatorTotalWidth : 0))
-                y: isVertical ? (list.height + (list.height > 0 ? dock.separatorTotalWidth : 0)) : 0
+                x: isVertical ? 0 : (shelfSeparator.x + (dock.animShelfWidth > 0 ? dock.separatorTotalWidth : 0))
+                y: isVertical ? (shelfSeparator.y + (dock.animShelfWidth > 0 ? dock.separatorTotalWidth : 0)) : 0
                 iconNames: Trash.empty ? ["user-trash"] : ["user-trash-full", "user-trash"]
                 glyphPaths: [
                     "M10 3.2h4c.55 0 1 .45 1 1v1.3H9v-1.3c0-.55.45-1 1-1z M4.5 6.5h15c.55 0 1 .35 1 .8s-.45.8-1 .8h-15c-.55 0-1-.35-1-.8s.45-.8 1-.8z",
@@ -1195,8 +1706,8 @@ PanelWindow {
                 id: settingsCell
                 dock: dock
                 waveSpace: contentRow
-                x: isVertical ? 0 : (list.width + (list.width > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0))
-                y: isVertical ? (list.height + (list.height > 0 ? dock.separatorTotalWidth : 0) + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0)) : 0
+                x: isVertical ? 0 : (trashCell.x + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0))
+                y: isVertical ? (trashCell.y + (dock.showTrash ? (dock.cellSize + dock.trashGap) : 0)) : 0
                 active: dock.settingsOpen
                 iconNames: ["preferences-system", "systemsettings", "configure"]
                 glyphPaths: [
@@ -1226,8 +1737,8 @@ PanelWindow {
         height: dock.newInstanceSize + dock.dockPadding * 2
         z: 15
 
-        visible: opacity > 0
-        opacity: dock.launchShown ? 1 : 0
+        visible: opacity > 0 && dock.launchShown && Boolean(cell && cell.running)
+        opacity: (dock.launchShown && Boolean(cell && cell.running)) ? 1 : 0
         Behavior on opacity {
             NumberAnimation { duration: 120 }
         }
@@ -1248,25 +1759,54 @@ PanelWindow {
             return Math.max(0, Math.min(dock.height - height, centre - height / 2));
         }
 
+        property real lastNewInstanceTime: 0
+
         MouseArea {
             id: launchArea
             anchors.fill: parent
+            // Seamless funnel bridge from the icon straight into the + button
+            anchors.bottomMargin: isBottom ? -(dock.dockPadding + 8) : 0
+            anchors.topMargin: isTop ? -(dock.dockPadding + 8) : 0
+            anchors.leftMargin: isRight ? -(dock.dockPadding + 8) : -16
+            anchors.rightMargin: isLeft ? -(dock.dockPadding + 8) : -16
             hoverEnabled: true
             enabled: dock.launchShown
-            onClicked: if (launcher.cell) Tasks.launchNew(launcher.cell.taskKey);
+
+            onPositionChanged: {
+                if (launcher.cell) {
+                    dock.hoveredCell = launcher.cell;
+                    dock.updatePointer(launcher.cell.cellCenterPos);
+                }
+            }
+
+            onEntered: {
+                if (launcher.cell) {
+                    dock.hoveredCell = launcher.cell;
+                    dock.updatePointer(launcher.cell.cellCenterPos);
+                }
+            }
+
+            onExited: {
+                dock.schedulePointerLeave();
+            }
+
+            onClicked: {
+                if (!launcher.cell) return;
+                const now = Date.now();
+                if (now - launcher.lastNewInstanceTime < 500) return;
+                launcher.lastNewInstanceTime = now;
+                Tasks.launchNew(launcher.cell.taskKey);
+            }
         }
 
         Rectangle {
             id: launchButton
-            anchors.horizontalCenter: isVertical ? undefined : parent.horizontalCenter
-            anchors.verticalCenter: isVertical ? parent.verticalCenter : undefined
-            anchors.top: isBottom ? parent.top : undefined
-            anchors.bottom: isTop ? parent.bottom : undefined
-            anchors.left: isRight ? parent.left : undefined
-            anchors.right: isLeft ? parent.right : undefined
             width: dock.newInstanceSize
             height: dock.newInstanceSize
-            radius: height / 2
+            radius: width / 2
+
+            x: isLeft ? (parent.width - width) : (isRight ? 0 : Math.round((parent.width - width) / 2))
+            y: isBottom ? 0 : (isTop ? (parent.height - height) : Math.round((parent.height - height) / 2))
 
             color: launchArea.containsMouse ? Config.newInstanceHoverBackground : Config.newInstanceBackground
             border.width: dock.borderWidth
@@ -1296,23 +1836,44 @@ PanelWindow {
     Item {
         id: tooltip
 
-        readonly property var targetAnchor: launchArea.containsMouse
-            ? dock.launchCell
-            : ((dock.showTrash && trashCell.hovered) ? trashCell
-            : (settingsCell.hovered ? settingsCell
-            : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing) ? separatorItem
-            : dock.hoveredCell)))
+        readonly property var targetAnchor: {
+            if (dock.hoveredWindowCard) return dock.hoveredWindowCard;
+            if (dock.hoveredMultiWindowIconAnchor) return dock.hoveredMultiWindowIconAnchor;
+            if (launchArea.containsMouse) return dock.launchCell;
+            if (dock.showTrash && trashCell.hovered) return trashCell;
+            if (settingsCell.hovered) return settingsCell;
+            if (resizeMouseArea.containsMouse || resizeMouseArea.resizing) return separatorItem;
+            return dock.hoveredCell;
+        }
 
         property var activeAnchor: null
         property string activeText: ""
 
-        readonly property string targetText: !targetAnchor ? ""
-            : launchArea.containsMouse ? Config.newInstanceLabel
-            : ((dock.showTrash && trashCell.hovered) ? "废纸篓"
-            : (settingsCell.hovered ? "Dock 设置"
-            : ((resizeMouseArea.containsMouse || resizeMouseArea.resizing)
-                ? (resizeMouseArea.resizing ? (dock.iconSize + " px") : "拖动以调整大小")
-            : (targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || "")))))
+        readonly property string targetText: {
+            if (dock.hoveredWindowCard) {
+                return dock.hoveredWindowCard.windowTitle
+                    + (dock.hoveredWindowCard.screenLabel ? (" · " + dock.hoveredWindowCard.screenLabel) : "")
+                    + (dock.hoveredWindowCard.isMinimized ? " (已最小化)" : "");
+            }
+            if (dock.hoveredMultiWindowIcon) {
+                return dock.hoveredMultiWindowIcon.name + " (" + dock.hoveredMultiWindowIcon.windows + " 个窗口)";
+            }
+            if (!targetAnchor) return "";
+            if (launchArea.containsMouse) return Config.newInstanceLabel;
+            if (dock.showTrash && trashCell.hovered) return "废纸篓";
+            if (settingsCell.hovered) return "Dock 设置";
+            if (resizeMouseArea.containsMouse || resizeMouseArea.resizing) {
+                return resizeMouseArea.resizing ? (resizeMouseArea.dragIconSize + " px") : "拖动以调整大小";
+            }
+            if (targetAnchor.dragMergeTarget) return "合并为文件夹";
+            if (targetAnchor.dragOverFolder) {
+                return "移入「" + (targetAnchor.folderData ? targetAnchor.folderData.name : "文件夹") + "」";
+            }
+            if (targetAnchor.isFolder) {
+                return targetAnchor.folderData ? targetAnchor.folderData.name : "文件夹";
+            }
+            return targetAnchor.entry ? targetAnchor.entry.name : (targetAnchor.appId || "");
+        }
 
         onTargetAnchorChanged: {
             if (targetAnchor) {
@@ -1330,7 +1891,7 @@ PanelWindow {
         readonly property string text: targetText !== "" ? targetText : activeText
 
         z: 25
-        readonly property bool shown: targetAnchor !== null && targetText !== "" && dock.revealed && !contextMenu.visible && !dock.settingsOpen && !trashMenu.visible && dock.expandedAppKey === ""
+        readonly property bool shown: targetAnchor !== null && targetText !== "" && dock.revealed && !contextMenu.visible && !dock.settingsOpen && !trashMenu.visible && !folderPopup.visible && (dock.expandedAppKey === "" || dock.hoveredWindowCard !== null || dock.hoveredMultiWindowIcon !== null)
 
         visible: opacity > 0
         opacity: shown ? 1 : 0
@@ -1342,25 +1903,25 @@ PanelWindow {
         height: label.implicitHeight + 10
 
         y: {
-            if (isBottom) return (dock.launchShown ? launcher.y : (body.y + plate.y)) - height - 8;
-            if (isTop) return (dock.launchShown ? (launcher.y + launcher.height) : (body.y + plate.y + dock.plateHeight)) + 8;
+            if (isBottom) return Math.max(6, (dock.launchShown ? launcher.y : (body.y + plate.y)) - height - 8);
+            if (isTop) return Math.min(dock.height - height - 6, (dock.launchShown ? (launcher.y + launcher.height) : (body.y + plate.y + dock.plateHeight)) + 8);
             const anchor = targetAnchor || activeAnchor;
             if (!anchor || !anchor.parent) return tooltip.y;
             try {
                 const centre = anchor.mapToItem(null, 0, anchor.height / 2).y;
-                return Math.max(0, Math.min(dock.height - height, centre - height / 2));
+                return Math.max(6, Math.min(dock.height - height - 6, centre - height / 2));
             } catch (e) {
                 return tooltip.y;
             }
         }
         x: {
-            if (isLeft) return (dock.launchShown ? (launcher.x + launcher.width) : (body.x + plate.x + dock.plateHeight)) + 8;
-            if (isRight) return (dock.launchShown ? launcher.x : (body.x + plate.x)) - width - 8;
+            if (isLeft) return Math.min(dock.width - width - 6, (dock.launchShown ? (launcher.x + launcher.width) : (body.x + plate.x + dock.plateHeight)) + 8);
+            if (isRight) return Math.max(6, (dock.launchShown ? launcher.x : (body.x + plate.x)) - width - 8);
             const anchor = targetAnchor || activeAnchor;
             if (!anchor || !anchor.parent) return tooltip.x;
             try {
                 const centre = anchor.mapToItem(null, anchor.width / 2, 0).x;
-                return Math.max(0, Math.min(dock.width - width, centre - width / 2));
+                return Math.max(6, Math.min(dock.width - width - 6, centre - width / 2));
             } catch (e) {
                 return tooltip.x;
             }
@@ -1405,5 +1966,11 @@ PanelWindow {
         id: trashMenu
         dock: dock
         anchor.item: trashCell
+    }
+
+    FolderPopup {
+        id: folderPopup
+        dockRef: dock
+        visible: false
     }
 }

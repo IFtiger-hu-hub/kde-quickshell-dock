@@ -23,6 +23,9 @@ PopupWindow {
     readonly property string appId: targetCell ? targetCell.appId : ""
     readonly property bool isRunning: targetCell ? targetCell.running : false
     readonly property int windowCount: targetCell ? targetCell.windows : 0
+    readonly property bool isFolder: targetCell ? !!targetCell.isFolder : false
+    readonly property string folderId: isFolder ? targetCell.folderId : ""
+    readonly property var folderData: isFolder ? targetCell.folderData : null
 
     readonly property bool isPinned: {
         if (!targetCell) return false;
@@ -173,6 +176,7 @@ PopupWindow {
 
                         CircleIcon {
                             id: appIcon
+                            visible: !root.isFolder
                             anchors.fill: parent
                             source: root.headerIconSource
                             circular: root.circularIcons
@@ -184,6 +188,14 @@ PopupWindow {
                                 }
                             }
                         }
+
+                        Image {
+                            visible: root.isFolder
+                            anchors.fill: parent
+                            source: "image://icon/folder"
+                            fillMode: Image.PreserveAspectFit
+                            opacity: 0.85
+                        }
                     }
 
                     Column {
@@ -193,7 +205,9 @@ PopupWindow {
 
                         Text {
                             width: parent.width
-                            text: root.targetEntry ? root.targetEntry.name : (root.targetCell ? root.targetCell.appId : "")
+                            text: root.isFolder
+                                ? (root.folderData ? root.folderData.name : "文件夹")
+                                : (root.targetEntry ? root.targetEntry.name : (root.targetCell ? root.targetCell.appId : ""))
                             color: Theme.textPrimary(root.isLight)
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -204,9 +218,11 @@ PopupWindow {
                             spacing: 5
 
                             Text {
-                                text: root.isRunning
-                                    ? (root.windowCount > 1 ? ("运行中 · " + root.windowCount + " 个窗口") : "正在运行")
-                                    : "未运行"
+                                text: root.isFolder
+                                    ? ((root.folderData && root.folderData.apps ? root.folderData.apps.length : 0) + " 个应用")
+                                    : (root.isRunning
+                                        ? (root.windowCount > 1 ? ("运行中 · " + root.windowCount + " 个窗口") : "正在运行")
+                                        : "未运行")
                                 color: Theme.textSecondary(root.isLight)
                                 font.pixelSize: 11
                             }
@@ -219,7 +235,7 @@ PopupWindow {
             Column {
                 width: parent.width
                 spacing: 3
-                visible: root.recentList.length > 0
+                visible: !root.isFolder && root.recentList.length > 0
 
                 Rectangle {
                     width: parent.width
@@ -329,7 +345,7 @@ PopupWindow {
             Column {
                 width: parent.width
                 spacing: 3
-                visible: root.desktopActions.length > 0
+                visible: !root.isFolder && root.desktopActions.length > 0
 
                 Rectangle {
                     width: parent.width
@@ -419,12 +435,98 @@ PopupWindow {
                     color: Theme.separator(root.isLight)
                 }
 
+                // ===== FOLDER ACTIONS (If cell is a folder) =====
+                Rectangle {
+                    width: parent.width
+                    height: 32
+                    radius: 6
+                    visible: root.isFolder
+                    color: openFolderMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (openFolderMouse.containsMouse ? Theme.accent : "transparent")
+
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        Image {
+                            width: 16
+                            height: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            source: "image://icon/folder-open"
+                            sourceSize.width: 16
+                            sourceSize.height: 16
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "打开应用文件夹"
+                            color: openFolderMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    MouseArea {
+                        id: openFolderMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            if (root.dockRef && root.targetCell) {
+                                root.dockRef.openFolder(root.targetCell, root.folderId);
+                            }
+                            root.close();
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 32
+                    radius: 6
+                    visible: root.isFolder
+                    color: disbandFolderMouse.pressed ? Qt.rgba(1, 0.2, 0.2, 0.25) : (disbandFolderMouse.containsMouse ? Qt.rgba(1, 0.2, 0.2, 0.15) : "transparent")
+
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        Image {
+                            width: 16
+                            height: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            source: "image://icon/edit-delete"
+                            sourceSize.width: 16
+                            sourceSize.height: 16
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "解散文件夹（应用返回 Dock）"
+                            color: Theme.destructive
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    MouseArea {
+                        id: disbandFolderMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            DockFolders.deleteFolder(root.folderId);
+                            root.close();
+                        }
+                    }
+                }
+
+                // ===== REGULAR APP ACTIONS (If NOT a folder) =====
                 // If running: New Instance
                 Rectangle {
                     width: parent.width
                     height: 32
                     radius: 6
-                    visible: root.isRunning
+                    visible: !root.isFolder && root.isRunning
                     color: newInstMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (newInstMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
@@ -466,7 +568,7 @@ PopupWindow {
                     width: parent.width
                     height: 32
                     radius: 6
-                    visible: root.isRunning
+                    visible: !root.isFolder && root.isRunning
                     color: activateMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (activateMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
@@ -508,7 +610,7 @@ PopupWindow {
                     width: parent.width
                     height: 32
                     radius: 6
-                    visible: !root.isRunning
+                    visible: !root.isFolder && !root.isRunning
                     color: launchMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (launchMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
@@ -550,6 +652,7 @@ PopupWindow {
                     width: parent.width
                     height: 32
                     radius: 6
+                    visible: !root.isFolder
                     color: pinMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (pinMouse.containsMouse ? Theme.accent : "transparent")
 
                     Row {
@@ -582,6 +685,99 @@ PopupWindow {
                         onClicked: {
                             if (root.isPinned) root.unpinApp();
                             else root.pinApp();
+                        }
+                    }
+                }
+
+                // Move into New Folder
+                Rectangle {
+                    width: parent.width
+                    height: 32
+                    radius: 6
+                    visible: !root.isFolder
+                    color: newFolderMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (newFolderMouse.containsMouse ? Theme.accent : "transparent")
+
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        Image {
+                            width: 16
+                            height: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            source: "image://icon/folder-new"
+                            sourceSize.width: 16
+                            sourceSize.height: 16
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "移入新应用文件夹"
+                            color: newFolderMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    MouseArea {
+                        id: newFolderMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            const targetIdx = root.targetCell ? root.targetCell.index : -1;
+                            DockFolders.createFolder("应用文件夹", [root.appId], targetIdx);
+                            root.close();
+                        }
+                    }
+                }
+
+                // Move into Existing Folders
+                Repeater {
+                    model: !root.isFolder && typeof DockFolders !== "undefined" ? DockFolders.folders : []
+                    delegate: Rectangle {
+                        id: folderRow
+                        required property var modelData
+                        required property int index
+
+                        width: parent.width
+                        height: 30
+                        radius: 6
+                        color: folderRowMouse.pressed ? Qt.darker(Theme.accent, 1.12) : (folderRowMouse.containsMouse ? Theme.accent : "transparent")
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 8
+
+                            Image {
+                                width: 14
+                                height: 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                source: "image://icon/folder"
+                                sourceSize.width: 14
+                                sourceSize.height: 14
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "移入「" + (folderRow.modelData.name || "文件夹") + "」"
+                                color: folderRowMouse.containsMouse ? "#ffffff" : Theme.textPrimary(root.isLight)
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                                width: parent.width - 32
+                            }
+                        }
+
+                        MouseArea {
+                            id: folderRowMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                DockFolders.addAppToFolder(folderRow.modelData.id, root.appId);
+                                root.close();
+                            }
                         }
                     }
                 }

@@ -37,6 +37,8 @@ Item {
 
     // True while launching an app until its window appears
     property bool launching: false
+    property int bounceCount: 0
+    readonly property int maxBounces: 4
 
     onWindowsChanged: {
         if (windows > 0) {
@@ -44,18 +46,38 @@ Item {
         }
     }
 
+    onLaunchingChanged: {
+        if (!launching) {
+            launchTimeoutTimer.stop();
+            if (!launchBounce.running && root.bounceOffset !== 0) {
+                bounceResetAnim.restart();
+            }
+        }
+    }
+
     Timer {
         id: launchTimeoutTimer
-        interval: 6000
+        interval: 3500
         repeat: false
-        onTriggered: root.launching = false
+        onTriggered: {
+            root.launching = false;
+        }
     }
+
+    // Directional bounce offsets supporting all 4 dock edges (bottom, top, left, right)
+    property real bounceOffset: 0
+    readonly property real bounceOffsetX: root.dockPosition === "left" ? root.bounceOffset
+                                        : root.dockPosition === "right" ? -root.bounceOffset
+                                        : 0
+    readonly property real bounceOffsetY: root.dockPosition === "top" ? root.bounceOffset
+                                        : (root.dockPosition === "bottom" || !root.dockPosition) ? -root.bounceOffset
+                                        : 0
+    readonly property real bounceY: root.bounceOffsetY
 
     // Wave scale & lift passed down from dock wave engine
     property real currentScale: 1.0
     property real liftX: 0
     property real liftY: 0
-    property real bounceY: 0
 
     // Sources to try in order; advance past any that fail to load.
     readonly property var sources: IconResolver.candidates(entry)
@@ -66,6 +88,9 @@ Item {
 
     function launch() {
         if (!root.running) {
+            if (!root.entry) return;
+            if (root.launching) return;
+            root.bounceCount = 0;
             root.launching = true;
             launchTimeoutTimer.restart();
             if (root.bounceOnLaunch) {
@@ -76,39 +101,67 @@ Item {
         }
     }
 
-    // Continuous rhythm bouncing while app is booting up (macOS behavior)
+    // Smooth reset animation guaranteeing the icon never freezes in mid-air
+    NumberAnimation {
+        id: bounceResetAnim
+        target: root
+        property: "bounceOffset"
+        to: 0
+        duration: 140
+        easing.type: Easing.OutQuad
+    }
+
+    // Continuous rhythm bouncing while app is booting up (macOS authentic behavior)
+    // Runs single complete bounce arcs, strictly bounded to maxBounces to prevent infinite loops
     SequentialAnimation {
         id: launchBounce
         running: false
-        loops: root.launching ? Animation.Infinite : 1
+        loops: 1
 
         NumberAnimation {
             target: root
-            property: "bounceY"
-            from: 0; to: -15
+            property: "bounceOffset"
+            from: 0; to: 15
             duration: 160
             easing.type: Easing.OutQuad
         }
         NumberAnimation {
             target: root
-            property: "bounceY"
-            from: -15; to: 0
+            property: "bounceOffset"
+            from: 15; to: 0
             duration: 180
             easing.type: Easing.InQuad
         }
         NumberAnimation {
             target: root
-            property: "bounceY"
-            from: 0; to: -7
+            property: "bounceOffset"
+            from: 0; to: 6
             duration: 110
             easing.type: Easing.OutQuad
         }
         NumberAnimation {
             target: root
-            property: "bounceY"
-            from: -7; to: 0
+            property: "bounceOffset"
+            from: 6; to: 0
             duration: 130
             easing.type: Easing.OutBounce
+        }
+
+        onFinished: {
+            if (root.launching && (root.bounceCount + 1 < root.maxBounces)) {
+                root.bounceCount++;
+                launchBounce.restart();
+            } else {
+                root.launching = false;
+                root.bounceCount = 0;
+                root.bounceOffset = 0;
+            }
+        }
+
+        onStopped: {
+            if (root.bounceOffset !== 0) {
+                bounceResetAnim.restart();
+            }
         }
     }
 
@@ -116,19 +169,31 @@ Item {
     SequentialAnimation {
         id: raiseNudge
         running: false
+        loops: 1
+
         NumberAnimation {
             target: root
-            property: "bounceY"
-            from: 0; to: -7
+            property: "bounceOffset"
+            from: 0; to: 7
             duration: 90
             easing.type: Easing.OutQuad
         }
         NumberAnimation {
             target: root
-            property: "bounceY"
-            from: -7; to: 0
+            property: "bounceOffset"
+            from: 7; to: 0
             duration: 120
             easing.type: Easing.OutQuad
+        }
+
+        onFinished: {
+            root.bounceOffset = 0;
+        }
+
+        onStopped: {
+            if (root.bounceOffset !== 0) {
+                bounceResetAnim.restart();
+            }
         }
     }
 
@@ -150,7 +215,6 @@ Item {
     Item {
         id: iconWrapper
 
-        anchors.centerIn: parent
         width: root.iconSize
         height: root.iconSize
 
@@ -161,21 +225,21 @@ Item {
                        : root.dockPosition === "right" ? Item.Right
                        : Item.Bottom
 
-        y: (parent.height - height) / 2 + root.liftY + root.bounceY
-        x: (parent.width - width) / 2 + root.liftX
+        y: (parent.height - height) / 2 + root.liftY + root.bounceOffsetY
+        x: (parent.width - width) / 2 + root.liftX + root.bounceOffsetX
 
         Behavior on scale {
-            enabled: !dock.pointerInside && !root.dragging
+            enabled: (d ? !d.pointerInside : true) && !root.dragging
             NumberAnimation { duration: 140; easing.type: Easing.OutQuad }
         }
 
         Behavior on y {
-            enabled: !dock.pointerInside && !launchBounce.running && !raiseNudge.running && !root.dragging
+            enabled: (d ? !d.pointerInside : true) && !launchBounce.running && !raiseNudge.running && !bounceResetAnim.running && !root.dragging
             NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
 
         Behavior on x {
-            enabled: !dock.pointerInside && !root.dragging
+            enabled: (d ? !d.pointerInside : true) && !launchBounce.running && !raiseNudge.running && !bounceResetAnim.running && !root.dragging
             NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
 
@@ -225,25 +289,37 @@ Item {
         }
     }
 
+    readonly property bool isVertical: root.dockPosition === "left" || root.dockPosition === "right"
+
     // ---- macOS Authentic Centered Running Indicator Dot ----
     Item {
         id: indicatorContainer
 
-        anchors.horizontalCenter: (root.dockPosition === "top" || root.dockPosition === "bottom") ? parent.horizontalCenter : undefined
-        anchors.verticalCenter: (root.dockPosition === "left" || root.dockPosition === "right") ? parent.verticalCenter : undefined
+        readonly property int dotThickness: root.isExpanded ? 3 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
+        readonly property int dotLength: root.isExpanded ? 14 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
 
-        anchors.bottom: root.dockPosition === "bottom" ? parent.bottom : undefined
-        anchors.top: root.dockPosition === "top" ? parent.top : undefined
-        anchors.left: root.dockPosition === "left" ? parent.left : undefined
-        anchors.right: root.dockPosition === "right" ? parent.right : undefined
+        readonly property int targetWidth: root.isVertical ? dotThickness : dotLength
+        readonly property int targetHeight: root.isVertical ? dotLength : dotThickness
 
-        anchors.bottomMargin: root.dockPosition === "bottom" ? 2 : 0
-        anchors.topMargin: root.dockPosition === "top" ? 2 : 0
-        anchors.leftMargin: root.dockPosition === "left" ? 2 : 0
-        anchors.rightMargin: root.dockPosition === "right" ? 2 : 0
+        width: targetWidth
+        height: targetHeight
 
-        width: root.isExpanded ? 20 : 14
-        height: 14
+        // Center along transverse axis
+        anchors.horizontalCenter: (!root.isVertical) ? parent.horizontalCenter : undefined
+        anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
+
+        // Position in the plate padding margin outside the icon
+        x: root.dockPosition === "left"
+            ? Math.round((parent.width - root.iconSize) / 2 - targetWidth - 2)
+            : root.dockPosition === "right"
+            ? Math.round(parent.width - (parent.width - root.iconSize) / 2 + 2)
+            : 0
+
+        y: root.dockPosition === "top"
+            ? Math.round((parent.height - root.iconSize) / 2 - targetHeight - 2)
+            : root.dockPosition === "bottom"
+            ? Math.round(parent.height - (parent.height - root.iconSize) / 2 + 2)
+            : 0
 
         visible: opacity > 0
         opacity: root.runningIndicator && (root.running || root.launching) && !root.dragging ? 1 : 0
@@ -253,29 +329,29 @@ Item {
         Behavior on width {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
+        Behavior on height {
+            NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+        }
 
         // Running Dot / Expanded Indicator Capsule
         Rectangle {
             id: dot
-            anchors.centerIn: parent
-            width: root.isExpanded ? 14 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
-            height: root.isExpanded ? 3 : (root.active ? root.indicatorActiveDotSize : root.indicatorDotSize)
-            radius: root.isExpanded ? 1.5 : (width / 2)
+            anchors.fill: parent
+            radius: Math.min(width, height) / 2
 
             color: (root.isExpanded || root.active || root.launching)
                 ? root.indicatorActiveColor
                 : root.indicatorColor
 
-            Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            Behavior on radius { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: 140 } }
 
-            SequentialAnimation on opacity {
+            SequentialAnimation {
+                id: dotPulseAnim
                 running: root.launching
                 loops: Animation.Infinite
-                NumberAnimation { from: 0.25; to: 1.0; duration: 380; easing.type: Easing.InOutQuad }
-                NumberAnimation { from: 1.0; to: 0.25; duration: 380; easing.type: Easing.InOutQuad }
+                NumberAnimation { target: dot; property: "opacity"; from: 0.25; to: 1.0; duration: 380; easing.type: Easing.InOutQuad }
+                NumberAnimation { target: dot; property: "opacity"; from: 1.0; to: 0.25; duration: 380; easing.type: Easing.InOutQuad }
+                onStopped: dot.opacity = 1.0
             }
         }
     }

@@ -17,21 +17,24 @@ Item {
     property bool shadow: true
     property bool asynchronous: true
 
+    readonly property real diameter: Math.min(width, height)
+
     // Zoom applied before clipping so already-round icons don't show a thin ring of
     // transparent margin inside the circle.
     property real overscan: 1.125
 
     // Pixel size the artwork is rasterised (and the clip layer rendered) at. Callers that
     // magnify the icon should pass a value large enough to stay sharp at the peak scale.
-    property int renderSize: Math.round(Math.max(width, height) * 2)
+    property int renderSize: Math.round(diameter * 2)
 
     readonly property alias status: icon.status
 
     // Soft contact shadow under the disc
     Rectangle {
-        anchors.fill: parent
-        anchors.topMargin: 1.5
-        anchors.bottomMargin: -1.5
+        width: root.diameter
+        height: root.diameter
+        anchors.centerIn: parent
+        anchors.verticalCenterOffset: 1.5
         radius: width / 2
         color: root.isLight ? "#22000000" : "#40000000"
         visible: root.circular && root.shadow
@@ -40,7 +43,9 @@ Item {
     // Plate, visible through any transparent parts of the artwork.
     // Neutral grey with only a faint shading, so it reads as a surface, not a button.
     Rectangle {
-        anchors.fill: parent
+        width: root.diameter
+        height: root.diameter
+        anchors.centerIn: parent
         radius: width / 2
         visible: root.circular
         gradient: Gradient {
@@ -51,8 +56,8 @@ Item {
 
     Rectangle {
         id: mask
-        width: root.width
-        height: root.height
+        width: root.diameter
+        height: root.diameter
         radius: width / 2
         visible: false
         layer.enabled: true
@@ -64,7 +69,9 @@ Item {
     // captures the item's own bounds, and the mask then rounds it off.
     Item {
         id: art
-        anchors.fill: parent
+        width: root.diameter
+        height: root.diameter
+        anchors.centerIn: parent
 
         layer.enabled: root.circular
         layer.smooth: true
@@ -95,7 +102,9 @@ Item {
 
     // Hairline rim so a white plate still reads as a disc on a light dock
     Rectangle {
-        anchors.fill: parent
+        width: root.diameter
+        height: root.diameter
+        anchors.centerIn: parent
         radius: width / 2
         color: "transparent"
         border.width: 1
