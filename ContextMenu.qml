@@ -102,6 +102,7 @@ PopupWindow {
 
     readonly property bool isLight: dockRef ? dockRef.isLight : ((0.299 * Config.backgroundColor.r + 0.587 * Config.backgroundColor.g + 0.114 * Config.backgroundColor.b) > 0.5)
     readonly property bool circularIcons: dockRef ? dockRef.circularIcons : Config.circularIcons
+    readonly property string iconShape: dockRef ? dockRef.iconShape : (Config.iconShape ?? (circularIcons ? "circle" : "original"))
 
     Process {
         id: dbusCall
@@ -180,6 +181,7 @@ PopupWindow {
                             anchors.fill: parent
                             source: root.headerIconSource
                             circular: root.circularIcons
+                            iconShape: root.iconShape
                             isLight: root.isLight
                             renderSize: 68
                             onStatusChanged: {

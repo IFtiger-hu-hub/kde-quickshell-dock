@@ -22,6 +22,14 @@ Item {
     readonly property color indicatorColor: d ? d.indicatorColor : "#888888"
     readonly property color indicatorActiveColor: d ? d.indicatorActiveColor : "#0a84ff"
     readonly property bool circularIcons: d ? d.circularIcons : Config.circularIcons
+    readonly property string iconShape: d ? d.iconShape : (Config.iconShape ?? (circularIcons ? "circle" : "original"))
+    readonly property bool isMasked: iconShape !== "original"
+    readonly property real cornerRadius: {
+        if (!isMasked) return Math.max(10, root.radius * 0.8);
+        if (iconShape === "circle") return diameter / 2;
+        if (iconShape === "squircle") return Math.round(diameter * 0.225);
+        return diameter / 2;
+    }
     readonly property bool isLight: d ? d.isLight : true
 
     required property string folderId
@@ -46,7 +54,7 @@ Item {
 
     readonly property real diameter: Math.min(iconWrapper.width, iconWrapper.height)
 
-    // The plate holding the mini 3x3 grid
+    // The plate holding the mini grid
     Item {
         id: iconWrapper
 
@@ -71,7 +79,7 @@ Item {
             height: root.diameter
             anchors.centerIn: parent
             anchors.verticalCenterOffset: 1.5
-            radius: root.circularIcons ? (width / 2) : Math.max(10, root.radius * 0.8)
+            radius: root.cornerRadius
             color: root.isLight ? "#22000000" : "#45000000"
             visible: !root.dragging
         }
@@ -82,7 +90,7 @@ Item {
             width: root.diameter
             height: root.diameter
             anchors.centerIn: parent
-            radius: root.circularIcons ? (width / 2) : Math.max(10, root.radius * 0.8)
+            radius: root.cornerRadius
 
             color: root.dragHoverTarget
                 ? (root.isLight ? Qt.rgba(0.04, 0.52, 1.0, 0.22) : Qt.rgba(0.04, 0.52, 1.0, 0.35))
@@ -113,15 +121,21 @@ Item {
                 color: "transparent"
                 border.width: 1
                 border.color: root.isLight ? "#1a000000" : "#26ffffff"
-                visible: root.circularIcons
+                visible: root.isMasked
             }
         }
 
-        // 3x3 Mini Grid Container
+        // Mini Grid Container (generously sized for crisp readability)
         Item {
             id: gridContainer
             anchors.centerIn: parent
-            width: Math.round(root.diameter * 0.72)
+
+            readonly property int gridCols: root.appList.length <= 4 ? 2 : 3
+            readonly property real baseRatio: gridCols === 2
+                ? (root.iconShape === "squircle" ? 0.84 : 0.80)
+                : (root.iconShape === "squircle" ? 0.78 : 0.74)
+
+            width: Math.round(root.diameter * baseRatio * (Config.folderPreviewScale ?? 1.0))
             height: width
 
             // If empty folder, show folder symbol
@@ -139,9 +153,9 @@ Item {
             Grid {
                 id: iconGrid
                 anchors.centerIn: parent
-                readonly property int gridCols: root.appList.length <= 4 ? 2 : 3
+                readonly property int gridCols: gridContainer.gridCols
                 columns: gridCols
-                spacing: gridCols === 2 ? 3.5 : 2.5
+                spacing: gridCols === 2 ? 2.5 : 2.0
                 visible: root.appList.length > 0
 
                 readonly property real cellDim: Math.floor((gridContainer.width - spacing * (gridCols - 1)) / gridCols)
@@ -163,27 +177,18 @@ Item {
 
                         onModelDataChanged: attempt = 0
 
-                        Rectangle {
+                        CircleIcon {
+                            id: miniIcon
                             anchors.fill: parent
-                            radius: Math.max(2, width * 0.22)
-                            color: "transparent"
-                            clip: true
-
-                            Image {
-                                id: miniImg
-                                anchors.fill: parent
-                                anchors.margins: 0.5
-                                source: miniCell.currentSource
-                                sourceSize.width: 36
-                                sourceSize.height: 36
-                                fillMode: Image.PreserveAspectFit
-                                asynchronous: true
-                                mipmap: true
-                                smooth: true
-                                onStatusChanged: {
-                                    if (status === Image.Error && miniCell.attempt < miniCell.iconSources.length - 1) {
-                                        miniCell.attempt++;
-                                    }
+                            source: miniCell.currentSource
+                            circular: root.circularIcons
+                            iconShape: root.iconShape
+                            isLight: root.isLight
+                            shadow: false
+                            renderSize: Math.round(width * 2)
+                            onStatusChanged: {
+                                if (status === Image.Error && miniCell.attempt < miniCell.iconSources.length - 1) {
+                                    miniCell.attempt++;
                                 }
                             }
                         }

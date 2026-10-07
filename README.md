@@ -395,7 +395,8 @@ and KIO keeps a `directorysizes` cache next to them. Deleting `files/` and
 | [DockIcon.qml](DockIcon.qml) | One app cell's visuals — icon, hover zoom, launch bounce, running dot |
 | [WindowCard.qml](WindowCard.qml) | One window card in an expanded multi-window app |
 | [UtilityCell.qml](UtilityCell.qml) | The circular-plate Trash and Settings cells |
-| [CircleIcon.qml](CircleIcon.qml) | App icon clipped to a uniform circle on a light/dark plate (`circularIcons`, on by default) |
+| [CircleIcon.qml](CircleIcon.qml) | App icon clipped to uniform circle or squircle (rounded square) on a light/dark plate (`iconShape`: circle, squircle, original) |
+| [FolderDockIcon.qml](FolderDockIcon.qml) | Application folder cell with adaptive 2x2/3x3 mini grid preview and smooth liquid glass plate |
 | [Theme.qml](Theme.qml) | Shared neutral colour tokens; accent follows the KDE accent colour from `kdeglobals` (live) |
 | [TrashMenu.qml](TrashMenu.qml) | Trash right-click menu with the empty confirmation |
 | [ContextMenu.qml](ContextMenu.qml) | Per-app right-click menu: recent files, actions, pin/unpin |

@@ -536,8 +536,7 @@ PanelWindow {
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    visible: Config.perScreenConfig
-                    text: "正在编辑：" + root.selectedScreen
+                    text: Config.perScreenConfig ? ("正在编辑：" + root.selectedScreen) : "全局配置（自动持久化）"
                     color: root.cTextSecondary
                     font.pixelSize: 11
                 }
@@ -558,6 +557,23 @@ PanelWindow {
                         const scr = Config.perScreenConfig ? root.selectedScreen : null;
                         if (key) Config.applyLightPreset(scr);
                         else Config.applyDarkPreset(scr);
+                    }
+                }
+
+                PushButton {
+                    id: saveBtn
+                    anchors.verticalCenter: parent.verticalCenter
+                    property bool savedFlash: false
+                    text: savedFlash ? "已保存 ✓" : "保存"
+                    onClicked: {
+                        Config.persist();
+                        savedFlash = true;
+                        saveFeedbackTimer.restart();
+                    }
+                    Timer {
+                        id: saveFeedbackTimer
+                        interval: 1200
+                        onTriggered: saveBtn.savedFlash = false
                     }
                 }
 
@@ -907,6 +923,7 @@ PanelWindow {
                     }
 
                     Group {
+                        visible: root.getVal("autoHide")
                         SliderRow {
                             title: "隐藏后保留的高度"
                             min: 0; max: 32; step: 2
@@ -932,6 +949,7 @@ PanelWindow {
                     }
 
                     Group {
+                        visible: root.getVal("autoHide")
                         SliderRow {
                             title: "隐藏延迟"
                             min: 100; max: 1000; step: 50
@@ -984,11 +1002,28 @@ PanelWindow {
                             onToggled: val => root.setVal("bounceOnLaunch", val)
                         }
                         Divider {}
-                        SwitchRow {
-                            title: "圆形图标"
-                            desc: "将所有图标统一为圆形"
-                            checked: root.getVal("circularIcons")
-                            onToggled: val => root.setVal("circularIcons", val)
+                        ChoiceRow {
+                            title: "图标形状"
+                            desc: "支持圆形、圆角正方形或系统主题原始样式"
+                            options: [
+                                { key: "circle", label: "圆形" },
+                                { key: "squircle", label: "圆角正方形" },
+                                { key: "original", label: "原始样式" }
+                            ]
+                            segWidth: 72
+                            current: root.getVal("iconShape") || (root.getVal("circularIcons") ? "circle" : "original")
+                            onPicked: key => {
+                                root.setVal("iconShape", key);
+                                root.setVal("circularIcons", key !== "original");
+                            }
+                        }
+                        Divider {}
+                        SliderRow {
+                            title: "文件夹网格预览大小"
+                            desc: "调整文件夹内 4 图标/9 图标网格缩放比例"
+                            min: 0.8; max: 1.3; step: 0.05
+                            value: root.getVal("folderPreviewScale") ?? 1.0; unit: "×"
+                            onModified: val => root.setVal("folderPreviewScale", Math.round(val * 100) / 100)
                         }
                         Divider {}
                         SwitchRow {
@@ -1007,9 +1042,14 @@ PanelWindow {
                     Group {
                         SwitchRow {
                             title: "贴边圆角"
-                            desc: "Dock 贴边时两端向外过渡"
+                            desc: "Dock 贴紧屏幕边缘（距离为0）时两端向外平滑过渡"
                             checked: root.getVal("edgeCorners")
-                            onToggled: val => root.setVal("edgeCorners", val)
+                            onToggled: val => {
+                                root.setVal("edgeCorners", val);
+                                if (val && root.getVal("bottomMargin") > 0) {
+                                    root.setVal("bottomMargin", 0);
+                                }
+                            }
                         }
                         Divider {}
                         SliderRow {
@@ -1062,15 +1102,9 @@ PanelWindow {
                     Group {
                         SwitchRow {
                             title: "显示运行指示点"
+                            desc: "在运行中的应用下方显示指示圆点"
                             checked: root.getVal("runningIndicator")
                             onToggled: val => root.setVal("runningIndicator", val)
-                        }
-                        Divider {}
-                        SliderRow {
-                            title: "指示点最多显示"
-                            min: 1; max: 5; step: 1
-                            value: root.getVal("indicatorMaxDots"); unit: " 个"
-                            onModified: val => root.setVal("indicatorMaxDots", Math.round(val))
                         }
                     }
 

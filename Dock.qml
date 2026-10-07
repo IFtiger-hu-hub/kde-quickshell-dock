@@ -44,6 +44,7 @@ PanelWindow {
     readonly property bool shadowEnabled: Config.getVal(screenName, "shadowEnabled")
     readonly property bool showTrash: Config.getVal(screenName, "showTrash")
     readonly property bool circularIcons: Config.getVal(screenName, "circularIcons")
+    readonly property string iconShape: Config.getVal(screenName, "iconShape") || (circularIcons ? "circle" : "original")
     readonly property bool showRunningApps: Config.getVal(screenName, "showRunningApps")
     readonly property bool raiseRunning: Config.getVal(screenName, "raiseRunning")
     readonly property bool minimizeActive: Config.getVal(screenName, "minimizeActive")
@@ -801,7 +802,7 @@ PanelWindow {
                     height: isVertical ? (parent.height - Math.round(dock.radius * 1.2)) : 1
                     anchors.verticalCenter: isVertical ? parent.verticalCenter : undefined
                     radius: 0.5
-                    visible: true
+                    visible: dock.glassHighlight
                     gradient: Gradient {
                         orientation: isVertical ? Gradient.Vertical : Gradient.Horizontal
                         GradientStop { position: 0.0; color: "transparent" }
@@ -1357,8 +1358,8 @@ PanelWindow {
                                     content.launch(); // Triggers gentle raiseNudge
 
                                     if (dock.raiseRunning) {
-                                        if (!Tasks.activate(cell.taskKey)) {
-                                            Tasks.activate(Tasks.key(cell.appId));
+                                        if (!Tasks.activate(cell.taskKey, dock.minimizeActive)) {
+                                            Tasks.activate(Tasks.key(cell.appId), dock.minimizeActive);
                                         }
                                         return;
                                     }

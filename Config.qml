@@ -35,9 +35,18 @@ Singleton {
                 copy[screenName][k] = root[k];
             }
         }
+        if (key === "iconShape") {
+            copy[screenName]["circularIcons"] = (val !== "original");
+        } else if (key === "circularIcons") {
+            copy[screenName]["iconShape"] = val ? (copy[screenName]["iconShape"] === "original" ? "circle" : (copy[screenName]["iconShape"] || "circle")) : "original";
+        }
         copy[screenName][key] = val;
         root.screensConfig = copy;
         root.revision++;
+        if (!root.ready) {
+            root.pendingWrite = true;
+            return;
+        }
         saveTimer.restart();
     }
 
@@ -147,6 +156,8 @@ Singleton {
         shadowEnabled: true,
         showTrash: true,
         circularIcons: true,
+        iconShape: "circle",
+        folderPreviewScale: 1.0,
         indicatorColor: "#80000000",
         indicatorActiveColor: "#cc000000",
         styleVersion: 2
@@ -270,6 +281,9 @@ Singleton {
     property bool shadowEnabled: defaults.shadowEnabled
     property bool showTrash: defaults.showTrash
     property bool circularIcons: defaults.circularIcons
+    property string iconShape: defaults.iconShape
+    property real folderPreviewScale: defaults.folderPreviewScale
+    property bool pendingWrite: false
 
     readonly property color hoverHighlight: "#1effffff"
     readonly property color dragHighlight: "#2affffff"
@@ -285,8 +299,17 @@ Singleton {
 
     // Setter function to update property and trigger debounced persist
     function setVal(key, val) {
+        if (key === "iconShape") {
+            root.circularIcons = (val !== "original");
+        } else if (key === "circularIcons") {
+            root.iconShape = val ? (root.iconShape === "original" ? "circle" : root.iconShape) : "original";
+        }
         if (root[key] === val) return;
         root[key] = val;
+        if (!root.ready) {
+            root.pendingWrite = true;
+            return;
+        }
         saveTimer.restart();
     }
 
@@ -355,6 +378,9 @@ Singleton {
             minimizeActive: true,
             newInstanceButton: false,
             showTrash: true,
+            circularIcons: true,
+            iconShape: "circle",
+            folderPreviewScale: 1.0,
             enabled: true
         };
         if (root.perScreenConfig && screenName) {
@@ -376,10 +402,16 @@ Singleton {
     }
 
     function persist() {
+        if (!root.ready) {
+            root.pendingWrite = true;
+            return;
+        }
+        root.pendingWrite = false;
+        saveTimer.stop();
         const obj = {};
         for (const k in defaults) {
             if (k === "backgroundColor" || k === "border" || k === "indicatorColor" || k === "indicatorActiveColor") {
-                obj[k] = root[k].toString();
+                obj[k] = root[k] ? root[k].toString() : "";
             } else {
                 obj[k] = root[k];
             }
@@ -387,6 +419,14 @@ Singleton {
         obj["perScreenConfig"] = root.perScreenConfig;
         obj["screensConfig"] = root.screensConfig;
         configFile.setText(JSON.stringify(obj, null, 2));
+    }
+
+    onReadyChanged: if (ready && pendingWrite) persist()
+
+    Component.onDestruction: {
+        if (root.ready && (saveTimer.running || root.pendingWrite)) {
+            root.persist();
+        }
     }
 
     Process {
@@ -418,12 +458,17 @@ Singleton {
                     if (parsed.hasOwnProperty("screensConfig") && typeof parsed.screensConfig === "object") {
                         root.screensConfig = parsed.screensConfig;
                     }
+                    // Backwards compatibility for iconShape
+                    if (!parsed.hasOwnProperty("iconShape") && parsed.hasOwnProperty("circularIcons")) {
+                        root.iconShape = parsed.circularIcons ? "circle" : "original";
+                    }
                 }
             } catch (e) {
                 console.warn("dock: failed to load config:", e);
             }
-            if (needsMigration) root.migrateStyle();
             root.ready = true;
+            if (needsMigration) root.migrateStyle();
+            else if (root.pendingWrite) root.persist();
         }
 
         onLoadFailed: root.ready = true

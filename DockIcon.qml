@@ -22,6 +22,7 @@ Item {
     readonly property color indicatorColor: d ? d.indicatorColor : root.indicatorColor
     readonly property color indicatorActiveColor: d ? d.indicatorActiveColor : root.indicatorActiveColor
     readonly property bool circularIcons: d ? d.circularIcons : Config.circularIcons
+    readonly property string iconShape: d ? d.iconShape : (Config.iconShape ?? (circularIcons ? "circle" : "original"))
     readonly property bool isLight: d ? d.isLight : true
 
     required property var entry
@@ -262,6 +263,7 @@ Item {
             anchors.fill: parent
 
             circular: root.circularIcons
+            iconShape: root.iconShape
             isLight: root.isLight
             source: root.iconSource
 

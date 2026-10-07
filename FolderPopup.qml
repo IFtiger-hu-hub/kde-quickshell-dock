@@ -13,6 +13,8 @@ PopupWindow {
     property var dockRef: null
     readonly property string position: dockRef ? dockRef.dockPosition : Config.position
     readonly property bool isLight: dockRef ? dockRef.isLight : true
+    readonly property bool circularIcons: dockRef ? dockRef.circularIcons : Config.circularIcons
+    readonly property string iconShape: dockRef ? dockRef.iconShape : (Config.iconShape ?? (circularIcons ? "circle" : "original"))
 
     anchor.edges: position === "top" ? Edges.Bottom
                 : position === "left" ? Edges.Right
@@ -626,16 +628,14 @@ PopupWindow {
                                 scale: itemMouse.pressed ? 0.94 : (itemMouse.containsMouse ? 1.06 : 1.0)
                                 Behavior on scale { NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
-                                Image {
+                                CircleIcon {
                                     id: appIcon
                                     anchors.fill: parent
                                     source: appCard.resolvedIcon
-                                    sourceSize.width: 64
-                                    sourceSize.height: 64
-                                    fillMode: Image.PreserveAspectFit
-                                    asynchronous: true
-                                    mipmap: true
-                                    smooth: true
+                                    circular: root.circularIcons
+                                    iconShape: root.iconShape
+                                    isLight: root.isLight
+                                    renderSize: 92
                                     onStatusChanged: {
                                         if (status === Image.Error && appCard.attempt < appCard.iconSources.length - 1) {
                                             appCard.attempt++;
@@ -1066,15 +1066,15 @@ PopupWindow {
                         anchors.rightMargin: 10
                         spacing: 10
 
-                        Image {
+                        CircleIcon {
                             width: 26
                             height: 26
                             anchors.verticalCenter: parent.verticalCenter
                             source: rowItem.rowIcon
-                            sourceSize.width: 32
-                            sourceSize.height: 32
-                            fillMode: Image.PreserveAspectFit
-                            asynchronous: true
+                            circular: root.circularIcons
+                            iconShape: root.iconShape
+                            isLight: root.isLight
+                            renderSize: 52
                             onStatusChanged: {
                                 if (status === Image.Error && rowItem.attempt < rowItem.iconSources.length - 1) {
                                     rowItem.attempt++;

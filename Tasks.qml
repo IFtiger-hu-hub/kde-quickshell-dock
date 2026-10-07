@@ -208,7 +208,7 @@ Singleton {
     // which single window counts as "the" window.
     // When only one window is open and minimizeActive is enabled, clicking
     // the already-active window minimizes it.
-    function activate(key, allowMinimize = true) {
+    function activate(key, allowMinimize = (Config.minimizeActive ?? true)) {
         const rec = root.info(key);
         if (!rec) return false;
 
@@ -216,7 +216,7 @@ Singleton {
         const children = tasks.data(row, root.roleIsGroupParent) ? tasks.rowCount(row) : 0;
 
         // Toggle minimize for single window if currently active
-        if (allowMinimize && Config.minimizeActive && rec.windows === 1) {
+        if (allowMinimize && rec.windows === 1) {
             const target = root.windowIndex(key);
             if (target && target.valid) {
                 const isActive = tasks.data(target, root.roleIsActive) === true || tasks.data(row, root.roleIsActive) === true;

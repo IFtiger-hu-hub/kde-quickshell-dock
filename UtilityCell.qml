@@ -85,6 +85,7 @@ Item {
             anchors.fill: parent
             // Without a themed icon, still give the glyph a plate to sit on.
             circular: root.dock.circularIcons || root.iconSource === ""
+            iconShape: root.dock ? root.dock.iconShape : "circle"
             isLight: root.dock.isLight
             source: root.iconSource
             renderSize: Math.round(root.dock.iconSize * Math.max(1.5, root.dock.hoverScale) * 1.5)

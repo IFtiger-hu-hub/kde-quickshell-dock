@@ -11,6 +11,7 @@ Item {
 
     readonly property bool isLight: dockRef ? dockRef.isLight : false
     readonly property bool circularIcons: dockRef ? dockRef.circularIcons : Config.circularIcons
+    readonly property string iconShape: dockRef ? dockRef.iconShape : (Config.iconShape ?? (circularIcons ? "circle" : "original"))
     readonly property bool isActive: {
         Tasks.revision;
         if (winData && winData.modelIndex) {
@@ -317,7 +318,7 @@ Item {
                     color: "#25000000"
                     y: 1.5
                     z: -1
-                    visible: !root.circularIcons
+                    visible: root.iconShape === "original"
                 }
 
                 CircleIcon {
@@ -325,6 +326,7 @@ Item {
                     anchors.fill: parent
                     source: root.resolvedIcon
                     circular: root.circularIcons
+                    iconShape: root.iconShape
                     isLight: root.isLight
                     renderSize: 56
                 }
@@ -430,13 +432,14 @@ Item {
                     color: "#25000000"
                     y: 1
                     z: -1
-                    visible: !root.circularIcons
+                    visible: root.iconShape === "original"
                 }
 
                 CircleIcon {
                     anchors.fill: parent
                     source: root.resolvedIcon
                     circular: root.circularIcons
+                    iconShape: root.iconShape
                     isLight: root.isLight
                     renderSize: 48
                 }
