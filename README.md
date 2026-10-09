@@ -21,6 +21,9 @@ magnification, frosted glass and drag-to-reorder.
 - **macOS-style look and motion**: cosine-wave hover magnification across
   neighbouring icons, bounce on launch, frosted glass plate with a specular top
   edge, light and dark presets, and any of the four screen edges.
+
+  ![Parabolic Hover Magnification](docs/dock-hover.png)
+
 - **Knows what's running**: a dot under each running app, click to raise (or
   minimize the focused single window), unpinned running apps shown too, and the
   icon's geometry is published to KWin for the Magic Lamp minimize effect (see
@@ -29,12 +32,18 @@ magnification, frosted glass and drag-to-reorder.
   opens a row of window cards beside it — app icon, cleaned-up window title,
   focus/minimized state, and a close button. When the dock gets wider than the
   screen it scrolls horizontally with the wheel or touchpad.
+
+  ![Multi-window Expansion Shelf](docs/dock-window-shelf.png)
+
 - **Right-click menu** per app: recent files for that app, its desktop actions,
   new window, pin / unpin from Kickoff favourites, or move into application folders.
 - **App Folders (应用文件夹)**: Group applications into custom folders directly on the
   dock. Folders display an authentic adaptive 2×2 / 3×3 mini-grid of contained app icons.
   Clicking a folder opens a frosted-glass popup panel to launch apps, rename inline,
   add applications via a searchable picker, or drag-and-drop apps directly into the folder.
+
+  ![Liquid Glass App Folders Popup](docs/dock-folder-popup.png)
+
 - **Trash** cell: click to open, right-click to empty — with a confirmation that
   shows the item count, done through KIO (see [Trash](#trash)).
 - **Settings panel** behind the gear cell for every option below, with optional
@@ -98,7 +107,13 @@ and a native Plasma floating panel; see [DOCK_SCHEMES.md](DOCK_SCHEMES.md).
 Click the **gear** cell at the end of the dock for the settings panel. Changes
 apply immediately and are saved to Quickshell's state directory
 (`dock-config.json`); with **per-screen** configuration on, each monitor keeps
-its own copy. Defaults live in [Config.qml](Config.qml). The most useful knobs:
+its own copy. Defaults live in [Config.qml](Config.qml).
+
+<p align="center">
+  <img src="docs/dock-settings.png" alt="Settings Panel" width="480" />
+</p>
+
+The most useful knobs:
 
 | Property                                                      | Meaning                                                                                      |
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
