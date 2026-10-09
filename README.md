@@ -44,6 +44,14 @@ magnification, frosted glass and drag-to-reorder.
 
   ![Liquid Glass App Folders Popup](docs/dock-folder-popup.png)
 
+- **Side Drawer (侧边抽屉)**: Click the fold/expand button at the right end of the dock
+  to slide out a frosted-glass utility center with shortcuts (screenshot, terminal,
+  system monitor, screen lock), scratchpad notes, and extensible widget slots.
+
+  <p align="center">
+    <img src="docs/dock-drawer.png" alt="Side Drawer Panel" width="420" />
+  </p>
+
 - **Trash** cell: click to open, right-click to empty — with a confirmation that
   shows the item count, done through KIO (see [Trash](#trash)).
 - **Settings panel** behind the gear cell for every option below, with optional
