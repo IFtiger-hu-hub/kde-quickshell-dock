@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import QtQuick.Effects
 
 // A stunning, immersive macOS frosted glass card with an enlarged Gaussian-blurred icon artwork backdrop
@@ -291,7 +292,10 @@ Item {
                 }
                 if (root.dockRef) {
                     root.dockRef.hoveredWindowCard = null;
-                    root.dockRef.expandedAppKey = "";
+                    const d = root.dockRef;
+                    Qt.callLater(() => {
+                        if (d) d.expandedAppKey = "";
+                    });
                 }
             }
         }

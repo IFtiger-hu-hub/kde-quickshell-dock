@@ -85,7 +85,6 @@ PopupWindow {
         editingTitle = false;
         activeAppMenuId = "";
         activeTargetApp = null;
-        try { gc(); } catch (e) {}
     }
 
     Process {
@@ -1066,7 +1065,7 @@ PopupWindow {
     PopupWindow {
         id: appItemMenu
         visible: root.activeAppMenuId !== "" && root.activeTargetApp !== null
-        anchor.item: root.activeTargetApp
+        anchor.item: (root.activeAppMenuId !== "" && root.activeTargetApp) ? root.activeTargetApp : card
         anchor.edges: root.position === "bottom" ? Edges.Top : Edges.Bottom
         anchor.gravity: anchor.edges
         anchor.adjustment: PopupAdjustment.SlideX | PopupAdjustment.SlideY | PopupAdjustment.FlipY
